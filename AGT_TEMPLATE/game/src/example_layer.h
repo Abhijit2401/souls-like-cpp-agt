@@ -2,10 +2,10 @@
 #include <engine.h>
 #include "Player.h"
 #include "SoulFragment.h"
-#include "Enemy.h" 
 #include "Boss.h"
-#include "Priest.h"
 #include "HolyProjectile.h"
+#include "SpawnManager.h"
+#include "Hud.h"
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -21,10 +21,6 @@ public:
 	void on_event(engine::event& event) override;
 
 private:
-	//SPAWN HELPER
-	void SpawnEnemy();
-	void SpawnPriest();
-
 	// Game state management for Main Menu, Ingame, and Pause Menu
 	enum class GameState
 	{
@@ -61,13 +57,8 @@ private:
 	engine::ref<engine::game_object>	m_halberd{};
 	engine::ref<engine::material>		m_halberd_material{};
 
-	//Enemies
-	std::vector<engine::ref<engine::game_object>> m_warriors; // Game objects for the berzerkers
-	std::vector<Enemy> m_enemies; // AI logic components
-
-	//Priest Mages
-	std::vector<engine::ref<engine::game_object>> m_priest_objects; // Game objects for the priests
-	std::vector<Priest> m_priests; // AI logic components
+	//Enemies, priests: spawning, AI update, and rendering owned by SpawnManager
+	SpawnManager m_spawn_manager;
 
 	// Settings for enemy spawning
 	int m_num_enemies_to_spawn = 5;
@@ -78,12 +69,6 @@ private:
 	//Projectiles
 	std::vector<HolyProjectile> m_projectiles; // Halberd projectiles made by the priests
 	engine::ref<engine::material> m_hologram_material{}; // Material for the "holographic" semi translucent "magical" projectiles
-
-	// Asset Storage for Enemy Types
-	engine::ref<engine::skinned_mesh> m_berzerker_mesh{};
-	std::vector<engine::ref<engine::texture_2d>> m_berzerker_textures{};
-	engine::ref<engine::skinned_mesh> m_priest_mesh{};
-	std::vector<engine::ref<engine::texture_2d>> m_priest_textures{};
 
 	//Grass
 	engine::ref<engine::model> m_grass_model{};
@@ -135,6 +120,7 @@ private:
 
 	float								m_prev_halberd_y_vel = 0.f;
 	engine::ref<engine::text_manager>	m_text_manager{};
+	Hud									m_hud;
 
 	//Cameras
 	engine::orthographic_camera         m_2d_camera;

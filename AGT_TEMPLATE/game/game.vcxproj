@@ -137,9 +137,11 @@
     <ClInclude Include="src\Enemy.h" />
     <ClInclude Include="src\example_layer.h" />
     <ClInclude Include="src\HolyProjectile.h" />
+    <ClInclude Include="src\Hud.h" />
     <ClInclude Include="src\Player.h" />
     <ClInclude Include="src\Priest.h" />
     <ClInclude Include="src\SoulFragment.h" />
+    <ClInclude Include="src\SpawnManager.h" />
     <ClInclude Include="src\tetrahedron.h" />
   </ItemGroup>
   <ItemGroup>
@@ -148,9 +150,11 @@
     <ClCompile Include="src\example_layer.cpp" />
     <ClCompile Include="src\game.cpp" />
     <ClCompile Include="src\HolyProjectile.cpp" />
+    <ClCompile Include="src\Hud.cpp" />
     <ClCompile Include="src\Player.cpp" />
     <ClCompile Include="src\Priest.cpp" />
     <ClCompile Include="src\SoulFragment.cpp" />
+    <ClCompile Include="src\SpawnManager.cpp" />
     <ClCompile Include="src\tetrahedron.cpp" />
   </ItemGroup>
   <ItemGroup>

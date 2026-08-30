@@ -29,12 +29,20 @@ engine::application::~application()
 
 void engine::application::run()
 {
+	// Frames longer than this are clamped so a stall (window drag, breakpoint,
+	// asset load, OS scheduling hiccup) can't inject a huge delta time into
+	// physics/gameplay update() calls and cause tunnelling or "spiral of death"
+	// style instability (e.g. an enemy dealing several frames' worth of damage
+	// in one update because dt briefly spiked to several seconds).
+	constexpr float max_timestep_seconds = 1.0f / 15.0f;
+
 	engine::timer gameLoopTimer;
 	gameLoopTimer.start();
 	while (s_running)
 	{
-		timestep time_step = (float)gameLoopTimer.elapsed();
+		float elapsed_seconds = (float)gameLoopTimer.elapsed();
 		gameLoopTimer.reset();
+		timestep time_step = std::min(elapsed_seconds, max_timestep_seconds);
 		for (auto* layer : m_layers_stack)
 		{
 			layer->on_update(time_step);

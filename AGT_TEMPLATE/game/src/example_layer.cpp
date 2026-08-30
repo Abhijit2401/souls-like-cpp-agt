@@ -133,16 +133,20 @@ example_layer::example_layer()
     knight_textures.push_back(engine::texture_2d::create("assets/textures/Knight.png", false));
 
     //BEZERKER (Melee horde enemy 1) from https://opengameart.org/content/animated-bezerker
-    m_berzerker_textures.push_back(engine::texture_2d::create("assets/textures/berzerker.png", false));
-    m_berzerker_mesh = engine::skinned_mesh::create("assets/models/animated/berzerker/berzerker.fbx");
-    m_berzerker_mesh->switch_root_movement(false);
-    m_berzerker_mesh->set_textures(m_berzerker_textures);
+    std::vector<engine::ref<engine::texture_2d>> berzerker_textures;
+    berzerker_textures.push_back(engine::texture_2d::create("assets/textures/berzerker.png", false));
+    engine::ref<engine::skinned_mesh> berzerker_mesh = engine::skinned_mesh::create("assets/models/animated/berzerker/berzerker.fbx");
+    berzerker_mesh->switch_root_movement(false);
+    berzerker_mesh->set_textures(berzerker_textures);
 
     //PRIEST (Ranged mage) from https://opengameart.org/content/animated-priest
-    m_priest_textures.push_back(engine::texture_2d::create("assets/textures/priest.png", false));
-    m_priest_mesh = engine::skinned_mesh::create("assets/models/animated/priest/priest.fbx");
-    m_priest_mesh->switch_root_movement(false);
-    m_priest_mesh->set_textures(m_priest_textures);
+    std::vector<engine::ref<engine::texture_2d>> priest_textures;
+    priest_textures.push_back(engine::texture_2d::create("assets/textures/priest.png", false));
+    engine::ref<engine::skinned_mesh> priest_mesh = engine::skinned_mesh::create("assets/models/animated/priest/priest.fbx");
+    priest_mesh->switch_root_movement(false);
+    priest_mesh->set_textures(priest_textures);
+
+    m_spawn_manager.initialise(berzerker_mesh, berzerker_textures, priest_mesh, priest_textures, m_spawn_radius, m_safe_radius);
 
     //GRASS (Static mesh to add detail to terrain) from https://opengameart.org/content/3d-grass-patch
     m_grass_model = engine::model::create("assets/models/static/high_grass.fbx");
@@ -192,11 +196,11 @@ example_layer::example_layer()
     //Enemy spawn (Enemy and Priest)
     for (int i = 0; i < m_num_enemies_to_spawn; i++)
     {
-        SpawnEnemy();
+        m_spawn_manager.spawn_enemy(m_player, m_game_objects);
     }
     for (int i = 0; i < m_num_priests_to_spawn; i++)
     {
-        SpawnPriest();
+        m_spawn_manager.spawn_priest(m_player, m_game_objects);
     }
 
     //BOSS SETUP
@@ -409,116 +413,11 @@ example_layer::example_layer()
     }
 
     m_text_manager = engine::text_manager::create();
+    m_hud.initialise(m_text_manager);
     m_player.update_camera(m_3d_camera);
 }
 
 example_layer::~example_layer() {}
-
-void example_layer::SpawnEnemy()
-{
-    //Checks if mesh is loaded
-    if (!m_berzerker_mesh) return;
-
-    engine::ref<engine::skinned_mesh> unique_mesh = engine::skinned_mesh::create("assets/models/animated/berzerker/berzerker.fbx");
-    unique_mesh->switch_root_movement(false);
-    unique_mesh->set_textures(m_berzerker_textures);
-
-    engine::game_object_properties enemy_props;
-    enemy_props.animated_mesh = unique_mesh;
-    enemy_props.scale = glm::vec3(0.15f);
-    enemy_props.textures = m_berzerker_textures;
-    enemy_props.type = 0;
-    enemy_props.mass = 1.0f;
-    enemy_props.friction = 1.0f;
-    enemy_props.restitution = 0.0f;
-    enemy_props.bounding_shape = glm::vec3(0.5f, 0.9f, 0.5f);
-
-    glm::vec3 spawn_pos;
-    bool valid_position = false;
-    int attempts = 0;
-
-    // Loop to ensure enemy doesn't spawn right on top of player or within a certain radius
-    while (!valid_position && attempts < 10)
-    {
-        float rX = ((float)rand() / (float)RAND_MAX * (m_spawn_radius * 2.0f)) - m_spawn_radius;
-        float rZ = ((float)rand() / (float)RAND_MAX * (m_spawn_radius * 2.0f)) - m_spawn_radius;
-        spawn_pos = glm::vec3(rX, 5.0f, rZ);
-
-        if (m_player.object()) {
-            float dist_to_player = glm::distance(spawn_pos, m_player.object()->position());
-            if (dist_to_player > m_safe_radius) {
-                valid_position = true;
-            }
-        }
-        else {
-            valid_position = true;
-        }
-        attempts++;
-    }
-
-    enemy_props.position = spawn_pos;
-
-    engine::ref<engine::game_object> warrior = engine::game_object::create(enemy_props);
-    warrior->set_angular_factor_lock(true);
-    warrior->set_offset(glm::vec3(0.0f, 0.0f, 0.0f));
-
-    m_warriors.push_back(warrior);
-
-    if (m_physics_manager) {
-        m_game_objects.push_back(warrior);
-    }
-    else {
-        m_game_objects.push_back(warrior);
-    }
-    //FSM setup for AI behaviour 
-    Enemy enemy_logic;
-    if (m_player.object()) {
-        enemy_logic.initialise(warrior, enemy_props.position, m_player.object());
-    }
-    m_enemies.push_back(enemy_logic);
-}
-
-void example_layer::SpawnPriest()
-{
-    if (!m_priest_mesh) return;
-    //Creates another unique mesh for the priest mage
-    engine::ref<engine::skinned_mesh> unique_mesh = engine::skinned_mesh::create("assets/models/animated/priest/priest.fbx");
-    unique_mesh->switch_root_movement(false);
-    unique_mesh->set_textures(m_priest_textures);
-
-    engine::game_object_properties priest_props;
-    priest_props.animated_mesh = unique_mesh;
-    priest_props.scale = glm::vec3(0.15f);
-    priest_props.textures = m_priest_textures;
-    priest_props.type = 0;
-    priest_props.mass = 1.0f;
-    priest_props.friction = 1.0f;
-    priest_props.restitution = 0.0f;
-    priest_props.bounding_shape = glm::vec3(0.5f, 0.9f, 0.5f);
-
-    float rX = ((float)rand() / (float)RAND_MAX * 50.0f) - 25.0f;
-    float rZ = ((float)rand() / (float)RAND_MAX * 50.0f) - 25.0f;
-    priest_props.position = glm::vec3(rX, 5.0f, rZ);
-
-    engine::ref<engine::game_object> priest_obj = engine::game_object::create(priest_props);
-    priest_obj->set_angular_factor_lock(true);
-    priest_obj->set_offset(glm::vec3(0.0f, 0.0f, 0.0f));
-
-    m_priest_objects.push_back(priest_obj);
-
-    if (m_physics_manager) {
-        m_game_objects.push_back(priest_obj);
-    }
-    else {
-        m_game_objects.push_back(priest_obj);
-    }
-
-    Priest priest_logic;
-    if (m_player.object()) {
-        priest_logic.initialise(priest_obj, priest_props.position, m_player.object());
-    }
-    m_priests.push_back(priest_logic);
-}
 
 void example_layer::on_update(const engine::timestep& time_step)
 {
@@ -560,106 +459,29 @@ void example_layer::on_update(const engine::timestep& time_step)
         }
         if (m_boss_logic.check_hit_player()) m_player.take_damage(25.0f);
 
-        //UPDATES ENEMY HORDE SIZE AND LOGIC
-        for (size_t i = 0; i < m_enemies.size(); i++)
+        //UPDATES ENEMY HORDE AND PRIEST AI, HIT DETECTION, RESPAWN, AND SOUL DROPS
+        SpawnManager::UpdateEvents spawn_events = m_spawn_manager.update(time_step, m_player);
+
+        for (const auto& drop_position : spawn_events.soul_drop_positions)
         {
-            m_enemies[i].on_update(time_step);
-
-            //Checks if player attack connects to enemy
-            if (m_player.is_attacking()) {
-                float dist = glm::distance(m_player.object()->position(), m_warriors[i]->position());
-                if (dist < 3.0f) {
-                    glm::vec3 to_enemy = glm::normalize(m_warriors[i]->position() - m_player.object()->position());
-                    if (glm::dot(m_player.object()->forward(), to_enemy) > 0.5f) {
-                        if (!m_enemies[i].is_dead()) {
-                            m_enemies[i].take_damage(m_player.get_damage() * (float)time_step);
-                        }
-                    }
-                }
-            }
-
-            if (m_enemies[i].check_hit_player()) {
-                m_player.take_damage(10.0f);
-            }
-
-            //RESPAWN MECHANIC where if the enemy is killed and vanishes, then they will be respawned outside the safe zone)
-            if (m_enemies[i].has_vanished())
-            {
-                glm::vec3 spawn_pos;
-                bool valid = false;
-                int attempts = 0;
-                while (!valid && attempts < 10) {
-                    float rX = ((float)rand() / (float)RAND_MAX * (m_spawn_radius * 2.0f)) - m_spawn_radius;
-                    float rZ = ((float)rand() / (float)RAND_MAX * (m_spawn_radius * 2.0f)) - m_spawn_radius;
-                    spawn_pos = glm::vec3(rX, 5.0f, rZ);
-                    if (glm::distance(spawn_pos, m_player.object()->position()) > m_safe_radius) valid = true;
-                    attempts++;
-                }
-                m_enemies[i].initialise(m_warriors[i], spawn_pos, m_player.object());
-            }
-
-            //Drops a random set number of souls
-            if (m_enemies[i].is_dead() && !m_enemies[i].souls_dropped())
-            {
-                int num_souls = (rand() % 5) + 1;
-                glm::vec3 drop_center = m_warriors[i]->position();
-                for (int s = 0; s < num_souls; s++) {
-                    float rX = ((float)rand() / (float)RAND_MAX * 3.0f) - 1.5f;
-                    float rZ = ((float)rand() / (float)RAND_MAX * 3.0f) - 1.5f;
-                    SoulFragmentPickup new_soul;
-                    new_soul.position = glm::vec3(drop_center.x + rX, 0.5f, drop_center.z + rZ);
-                    new_soul.is_active = true;
-                    m_soul_pickups.push_back(new_soul);
-                }
-                m_enemies[i].set_souls_dropped(true);
-            }
+            SoulFragmentPickup new_soul;
+            new_soul.position = drop_position;
+            new_soul.is_active = true;
+            m_soul_pickups.push_back(new_soul);
         }
 
-        //UPDATES PRIEST RUNNING AI
-        for (size_t i = 0; i < m_priests.size(); i++)
+        for (int i = 0; i < spawn_events.projectile_spawn_requests; i++)
         {
-            m_priests[i].on_update(time_step);
+            HolyProjectile proj;
+            engine::game_object_properties proj_props;
+            proj_props.meshes = m_projectile_model->meshes();
+            proj_props.scale = glm::vec3(0.15f);
+            proj_props.position = m_player.object()->position() + glm::vec3(0.0f, 10.0f, 0.0f);
+            proj_props.bounding_shape = m_projectile_model->size() / 2.f;
+            engine::ref<engine::game_object> proj_obj = engine::game_object::create(proj_props);
 
-            if (m_priests[i].should_spawn_projectile()) {
-                HolyProjectile proj;
-                engine::game_object_properties proj_props;
-                proj_props.meshes = m_projectile_model->meshes();
-                proj_props.scale = glm::vec3(0.15f);
-                proj_props.position = m_player.object()->position() + glm::vec3(0.0f, 10.0f, 0.0f);
-                proj_props.bounding_shape = m_projectile_model->size() / 2.f;
-                engine::ref<engine::game_object> proj_obj = engine::game_object::create(proj_props);
-
-                proj.initialise(proj_obj);
-                m_projectiles.push_back(proj);
-            }
-
-            //Checks if players attack connects with them
-            if (m_player.is_attacking()) {
-                float dist = glm::distance(m_player.object()->position(), m_priest_objects[i]->position());
-                if (dist < 3.0f) {
-                    glm::vec3 to_enemy = glm::normalize(m_priest_objects[i]->position() - m_player.object()->position());
-                    if (glm::dot(m_player.object()->forward(), to_enemy) > 0.5f) {
-                        m_priests[i].take_damage(m_player.get_damage() * (float)time_step);
-                    }
-                }
-            }
-
-            //The Priest mage soul drop logic
-            if (m_priests[i].is_dead() && !m_priests[i].souls_dropped())
-            {
-                int num_souls = (rand() % 6) + 3;
-                glm::vec3 drop_center = m_priest_objects[i]->position();
-
-                for (int s = 0; s < num_souls; s++) {
-                    float rX = ((float)rand() / (float)RAND_MAX * 2.0f) - 1.0f;
-                    float rZ = ((float)rand() / (float)RAND_MAX * 2.0f) - 1.0f;
-                    SoulFragmentPickup new_soul;
-                    new_soul.position = glm::vec3(drop_center.x + rX, 0.5f, drop_center.z + rZ);
-                    new_soul.is_active = true;
-                    m_soul_pickups.push_back(new_soul);
-                }
-                m_priests[i].set_souls_dropped(true);
-            }
+            proj.initialise(proj_obj);
+            m_projectiles.push_back(proj);
         }
 
         //Updates the halberd projectiles
@@ -701,53 +523,7 @@ void example_layer::on_render()
     {
         const auto text_shader = engine::renderer::shaders_library()->get("text_2D");
         engine::renderer::begin_scene(m_2d_camera, text_shader);
-        std::dynamic_pointer_cast<engine::gl_shader>(text_shader)->set_uniform("has_texture", true);
-        m_intro_texture->bind();
-        glm::mat4 transform(1.0f);
-        engine::renderer::submit(text_shader, m_quad_mesh, transform);
-        std::dynamic_pointer_cast<engine::gl_shader>(text_shader)->set_uniform("has_texture", false);
-
-        float width = (float)engine::application::window().width();
-        float height = (float)engine::application::window().height();
-
-        m_text_manager->render_text(text_shader, "medievalsoulsgameforadvancedgamesproject", 100.f, height / 2.f + 100.f, 1.0f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-
-        //Main menu selection text setup
-        if (m_menu_selection == 0)
-        {
-            m_text_manager->render_text(text_shader, "> START", 100.f, height / 2.f, 0.7f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-            m_text_manager->render_text(text_shader, "  SENSITIVITY", 100.f, height / 2.f - 50.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-            m_text_manager->render_text(text_shader, "  VOLUME", 100.f, height / 2.f - 100.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-        }
-        else if (m_menu_selection == 1)
-        {
-            m_text_manager->render_text(text_shader, "  START", 100.f, height / 2.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-            m_text_manager->render_text(text_shader, "> SENSITIVITY", 100.f, height / 2.f - 50.f, 0.7f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-            m_text_manager->render_text(text_shader, "  VOLUME", 100.f, height / 2.f - 100.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-        }
-        else
-        {
-            m_text_manager->render_text(text_shader, "  START", 100.f, height / 2.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-            m_text_manager->render_text(text_shader, "  SENSITIVITY", 100.f, height / 2.f - 50.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-            m_text_manager->render_text(text_shader, "> VOLUME", 100.f, height / 2.f - 100.f, 0.7f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-        }
-        //Mouse sens setup
-        std::stringstream sensitivity_calc;
-        sensitivity_calc << std::fixed << std::setprecision(2) << m_player.get_mouse_sensitivity();
-        std::string sens_text = "< " + sensitivity_calc.str() + " >";
-        m_text_manager->render_text(text_shader, sens_text, 350.f, height / 2.f - 50.f, 0.7f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-        //Music volume setup
-        std::stringstream vol_calc;
-        vol_calc << std::fixed << std::setprecision(2) << m_music_volume;
-        std::string vol_text = "< " + vol_calc.str() + " >";
-        m_text_manager->render_text(text_shader, vol_text, 350.f, height / 2.f - 100.f, 0.7f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-        //Controls setup
-        m_text_manager->render_text(text_shader, "Controls:", 10.f, height - 25.f, 0.5f, glm::vec4(1.f));
-        m_text_manager->render_text(text_shader, "WASD: Move | L-Shift: Dash | R: Health Potion", 10.f, height - 50.f, 0.5f, glm::vec4(1.f));
-        m_text_manager->render_text(text_shader, "Mouse: Move Camera", 10.f, height - 75.f, 0.5f, glm::vec4(1.f));
-        m_text_manager->render_text(text_shader, "Space: Attack | E: Toggle Upgrade Menu", 10.f, height - 100.f, 0.5f, glm::vec4(1.f));
-        m_text_manager->render_text(text_shader, "P: Spawn Enemy", 10.f, height - 125.f, 0.5f, glm::vec4(1.f));
-
+        m_hud.render_main_menu(text_shader, m_intro_texture, m_quad_mesh, m_menu_selection, m_player.get_mouse_sensitivity(), m_music_volume);
         engine::renderer::end_scene();
     }
     else if (m_game_state == GameState::InGame || m_game_state == GameState::PauseMenu)
@@ -804,26 +580,8 @@ void example_layer::on_render()
         }
         std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", false);
 
-        //RENDERS ALL ENEMIES
-        for (size_t i = 0; i < m_enemies.size(); i++)
-        {
-            if (!m_enemies[i].has_vanished())
-            {
-                glm::mat4 warrior_transform(1.0f);
-                m_warriors[i]->transform(warrior_transform);
-                engine::renderer::submit(mesh_shader, warrior_transform, m_warriors[i]);
-            }
-        }
-        //RENDERS ALL PRIESTS
-        for (size_t i = 0; i < m_priests.size(); i++)
-        {
-            if (!m_priests[i].has_vanished())
-            {
-                glm::mat4 priest_transform(1.0f);
-                m_priest_objects[i]->transform(priest_transform);
-                engine::renderer::submit(mesh_shader, priest_transform, m_priest_objects[i]);
-            }
-        }
+        //RENDERS ALL ENEMIES AND PRIESTS
+        m_spawn_manager.render(mesh_shader);
         //RENDERSE BOSS
         if (!m_boss_logic.has_vanished()) {
             glm::mat4 boss_transform(1.0f);
@@ -891,120 +649,39 @@ void example_layer::on_render()
         engine::renderer::end_scene();
         //2D HUD
         const auto text_shader = engine::renderer::shaders_library()->get("text_2D");
-        //HP RED TEXT
-        std::stringstream hp_ss;
-        hp_ss << "HP: " << (int)m_player.get_health() << "/" << (int)m_player.get_max_health();
-        m_text_manager->render_text(text_shader, hp_ss.str(), 10.f, 25.f, 0.5f, glm::vec4(1.f, 0.2f, 0.2f, 1.f));
-        //STAMINA GREEN TEXTE
-        std::stringstream stm_ss;
-        stm_ss << "Stamina: " << (int)m_player.get_stamina() << "/" << (int)m_player.get_max_stamina();
-        m_text_manager->render_text(text_shader, stm_ss.str(), 10.f, 50.f, 0.5f, glm::vec4(0.f, 1.f, 0.f, 1.f));
-        //SOULS WHITE TEXT
-        std::string soul_text = "Soul Fragments: " + std::to_string(m_soul_count);
-        m_text_manager->render_text(text_shader, soul_text, 10.f, 75.f, 0.5f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-        //POTION BLUE TEXT
-        std::stringstream pot_ss;
-        pot_ss << "Potions: " << m_player.get_potions();
-        m_text_manager->render_text(text_shader, pot_ss.str(), 10.f, 100.f, 0.5f, glm::vec4(0.f, 1.f, 1.f, 1.f));
+        m_hud.render_game_hud(text_shader, m_player, m_soul_count);
 
         //FLOATING RED ENEMY HEALTH BARS taht are attached to the enemys
-        for (size_t i = 0; i < m_enemies.size(); i++)
+        const auto& enemies = m_spawn_manager.enemies();
+        const auto& warriors = m_spawn_manager.warrior_objects();
+        for (size_t i = 0; i < enemies.size(); i++)
         {
-            if (!m_enemies[i].is_dead())
+            if (!enemies[i].is_dead())
             {
-                glm::vec3 pos = m_warriors[i]->position();
-                pos.y += 2.5f;
-                glm::vec4 clipSpace = m_3d_camera.projection_matrix() * m_3d_camera.view_matrix() * glm::vec4(pos, 1.0f);
-                if (clipSpace.w > 0.0f) {
-                    glm::vec3 ndc = glm::vec3(clipSpace) / clipSpace.w;
-                    if (ndc.z >= 0.0f && ndc.z <= 1.0f) {
-                        float screenW = (float)engine::application::window().width();
-                        float screenH = (float)engine::application::window().height();
-                        float x = (ndc.x + 1.0f) / 2.0f * screenW;
-                        float y = (ndc.y + 1.0f) / 2.0f * screenH;
-
-                        float pct = m_enemies[i].get_health_percent();
-                        std::string bar = "[";
-                        int bars = 10;
-                        int fill = (int)(pct * bars);
-                        for (int b = 0; b < bars; b++) bar += (b < fill) ? "|" : " ";
-                        bar += "]";
-
-                        m_text_manager->render_text(text_shader, bar, x - 30, y, 0.3f, glm::vec4(1.f, 0.f, 0.f, 1.f));
-                    }
-                }
+                m_hud.render_floating_health_bar(text_shader, m_3d_camera, warriors[i]->position(), enemies[i].get_health_percent(), glm::vec4(1.f, 0.f, 0.f, 1.f));
             }
         }
 
         //Same floating health bars but for hte priests but theyre blue to allow the player to see the difference
-        for (size_t i = 0; i < m_priests.size(); i++)
+        const auto& priests = m_spawn_manager.priests();
+        const auto& priest_objects = m_spawn_manager.priest_objects();
+        for (size_t i = 0; i < priests.size(); i++)
         {
-            if (!m_priests[i].is_dead())
+            if (!priests[i].is_dead())
             {
-                glm::vec3 pos = m_priest_objects[i]->position();
-                pos.y += 2.5f;
-                glm::vec4 clipSpace = m_3d_camera.projection_matrix() * m_3d_camera.view_matrix() * glm::vec4(pos, 1.0f);
-                if (clipSpace.w > 0.0f) {
-                    glm::vec3 ndc = glm::vec3(clipSpace) / clipSpace.w;
-                    if (ndc.z >= 0.0f && ndc.z <= 1.0f) {
-                        float screenW = (float)engine::application::window().width();
-                        float screenH = (float)engine::application::window().height();
-                        float x = (ndc.x + 1.0f) / 2.0f * screenW;
-                        float y = (ndc.y + 1.0f) / 2.0f * screenH;
-
-                        float pct = m_priests[i].get_health_percent();
-                        std::string bar = "[";
-                        int bars = 10;
-                        int fill = (int)(pct * bars);
-                        for (int b = 0; b < bars; b++) bar += (b < fill) ? "|" : " ";
-                        bar += "]";
-
-                        m_text_manager->render_text(text_shader, bar, x - 30, y, 0.3f, glm::vec4(0.f, 0.8f, 1.f, 1.f));
-                    }
-                }
+                m_hud.render_floating_health_bar(text_shader, m_3d_camera, priest_objects[i]->position(), priests[i].get_health_percent(), glm::vec4(0.f, 0.8f, 1.f, 1.f));
             }
         }
 
         //Boss HUD Appearance which always is on the screen just like in other souls games
         if (!m_boss_logic.is_dead()) {
-            float pct = m_boss_logic.get_health_percent();
-            std::string bar = "[";
-            int bars = 20;
-            int fill = (int)(pct * bars);
-            for (int b = 0; b < bars; b++) bar += (b < fill) ? "|" : " ";
-            bar += "]";
-
-            float screenW = (float)engine::application::window().width();
-            float screenH = (float)engine::application::window().height();
-            m_text_manager->render_text(text_shader, "BOSS: DEVIL", screenW / 2 - 100, screenH - 40, 0.5f, glm::vec4(1.f, 0.5f, 0.f, 1.f));
-            m_text_manager->render_text(text_shader, bar, screenW / 2 - 150, screenH - 70, 0.5f, glm::vec4(1.f, 0.f, 0.f, 1.f));
+            m_hud.render_boss_health_bar(text_shader, m_boss_logic.get_health_percent());
         }
 
         //Upgrade pause menu that pauses the game and alllows the player to spend souls
         if (m_game_state == GameState::PauseMenu)
         {
-            float w = (float)engine::application::window().width();
-            float h = (float)engine::application::window().height();
-
-            m_text_manager->render_text(text_shader, "Pause Upgrade Menu", w / 2 - 150, h / 2 + 100, 1.0f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-
-            std::stringstream souls;
-            souls << "Available Souls: " << m_soul_count;
-            m_text_manager->render_text(text_shader, souls.str(), w / 2 - 100, h / 2 + 50, 0.7f, glm::vec4(1.f));
-
-            std::stringstream dmg;
-            dmg << "[1] Increase Damage (Cost: 5) Current: " << (int)m_player.get_damage();
-            m_text_manager->render_text(text_shader, dmg.str(), w / 2 - 200, h / 2, 0.6f, glm::vec4(1.f, 0.2f, 0.2f, 1.f));
-
-            std::stringstream spd;
-            spd << "[2] Increase Attack Speed (Cost: 5) Current: " << (int)m_player.get_speed();
-            m_text_manager->render_text(text_shader, spd.str(), w / 2 - 200, h / 2 - 40, 0.6f, glm::vec4(0.2f, 0.2f, 1.f, 1.f));
-
-            std::stringstream pot;
-            pot << "[3] Buy Health Potion (Cost: 10) Owned: " << m_player.get_potions();
-            m_text_manager->render_text(text_shader, pot.str(), w / 2 - 200, h / 2 - 80, 0.6f, glm::vec4(0.f, 1.f, 0.f, 1.f));
-
-            m_text_manager->render_text(text_shader, "Press E to Resume", w / 2 - 120, h / 2 - 140, 0.5f, glm::vec4(0.8f));
+            m_hud.render_pause_menu(text_shader, m_player, m_soul_count);
         }
     }
 }
@@ -1031,7 +708,7 @@ void example_layer::on_event(engine::event& event)
         {
             if (e.key_code() == engine::key_codes::KEY_P)
             {
-                SpawnEnemy();
+                m_spawn_manager.spawn_enemy(m_player, m_game_objects);
             }
             if (e.key_code() == engine::key_codes::KEY_R)
             {
