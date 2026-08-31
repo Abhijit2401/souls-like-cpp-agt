@@ -216,6 +216,13 @@ void engine::perspective_camera::set_view_matrix(glm::vec3 position, glm::vec3 l
 	m_view_projection_mat = m_projection_mat * m_view_mat;
 }
 
+void engine::perspective_camera::set_fov(float fov_degrees)
+{
+    m_fov = fov_degrees;
+    m_projection_mat = glm::perspective(glm::radians(m_fov), m_aspect_ratio, m_near_plane, m_far_plane);
+    m_view_projection_mat = m_projection_mat * m_view_mat;
+}
+
 void engine::perspective_camera::update_camera_vectors()
 {
     // Calculate the new Front vector

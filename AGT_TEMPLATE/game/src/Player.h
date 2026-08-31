@@ -8,14 +8,13 @@ public:
     player();
     ~player();
     void initialise(engine::ref<engine::game_object> object);
-    void on_update(const engine::timestep& time_step);
+    void on_update(const engine::timestep& time_step, bool has_lock_on_target = false, const glm::vec3& lock_on_target_position = glm::vec3(0.f));
 
     engine::ref<engine::game_object> object() const { return m_object; }
     void turn(float angle);
-    void update_camera(engine::perspective_camera& camera); //Positions and targets the camera
-
+    void update_camera(engine::perspective_camera& camera, const engine::timestep& time_step);
     void attack(); //Starts the attack sequence
-    void roll();   //Starts the dash/roll sequence
+    void roll(const glm::vec3& direction);
 
     //STATS
     // Takes damage, includes roll immunity
@@ -27,7 +26,12 @@ public:
     float get_health() const { return m_health; }
     float get_max_health() const { return m_max_health; }
     bool is_attacking() const;
+    float get_attack_progress() const;
     bool is_rolling() const { return m_current_state == PlayerState::Rolling; }
+    bool is_dead() const { return m_current_state == PlayerState::Dead; }
+    void respawn();
+    void toggle_invincible() { m_invincible = !m_invincible; }
+    bool is_invincible() const { return m_invincible; }
 
     //POTIONS
     int get_potions() const { return m_num_potions; }
@@ -49,12 +53,12 @@ public:
     //Camera/Control settings
     void set_mouse_sensitivity(float sensitivity) { s_mouse_sensitivity = sensitivity; }
     float get_mouse_sensitivity() const { return s_mouse_sensitivity; }
-
     int get_debug_anim_index() const { return m_anim_dash; }
-
+    void trigger_camera_shake(float duration, float magnitude);
 private:
     float m_speed{ 0.f };
     float m_animation_timer; // Used to track attack/roll duration
+    float m_attack_duration = 1.0f;
     engine::ref<engine::game_object> m_object;
 
     //CAMERA SETTINGS
@@ -78,21 +82,34 @@ private:
     uint32_t m_anim_attack;
     uint32_t m_anim_dash;
 
+    glm::vec3 m_last_movement_direction{ 0.f, 0.f, -1.f };
     //Roll/Dash stats
     glm::vec3 m_locked_roll_direction{ 0.f };
     float m_dash_angle = 0.0f;
     bool m_shift_pressed = false; //Tracks shift state to only trigger roll on press
+
+    //CAMERA SHAKE
+    float m_shake_duration = 0.0f;
+    float m_shake_time_left = 0.0f;
+    float m_shake_magnitude = 0.0f;
 
     //CHAR STATS
     float m_health = 100.0f;
     float m_max_health = 100.0f;
     float m_stamina = 100.0f;
     float m_max_stamina = 100.0f;
-    float m_stamina_regen = 18.0f; //amount of stamina gained per second
+    float m_stamina_regen = 18.0f;
 
     float m_attack_damage = 20.0f;
     float m_run_speed = 4.0f;
 
+    float m_acceleration = 20.0f;
+    float m_deceleration = 25.0f;
+    float m_base_fov = 45.0f;
+    float m_current_fov = 45.0f;
+    float m_fov_lerp_speed = 8.0f;
+
     //POTION INVENTORY AMOUNT
     int m_num_potions = 0;
+    bool m_invincible = false;
 };

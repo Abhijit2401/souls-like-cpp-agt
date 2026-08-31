@@ -6,7 +6,6 @@ namespace engine
 {
 	class mesh;
 
-	/// \brief Class for generating the visual mesh of a Soul Fragment collectable
 	class SoulFragment
 	{
 	public:
@@ -22,7 +21,6 @@ namespace engine
 		static ref<SoulFragment> create(std::vector<glm::vec3> vertices);
 
 	private:
-		/// \brief Fields
 		std::vector<glm::vec3> m_vertices;
 		ref<engine::mesh> m_mesh;
 	};

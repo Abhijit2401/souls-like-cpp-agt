@@ -2,10 +2,6 @@
 #include <engine.h>
 #include "Player.h"
 
-// Owns all 2D text/HUD rendering: main menu, in-game HUD, floating world-space
-// health bars, boss health bar, and the pause/upgrade menu overlay.
-// Extracted out of example_layer so rendering-only code isn't mixed in with
-// scene setup and gameplay update logic.
 class Hud
 {
 public:
@@ -18,28 +14,36 @@ public:
         int menu_selection,
         float mouse_sensitivity,
         float music_volume);
-
-    // Top-left in-game stat readout (HP/Stamina/Soul Fragments/Potions).
     void render_game_hud(const engine::ref<engine::shader>& text_shader,
         const player& player,
         int soul_count);
 
-    // Floating "[||||     ]" bar above a world-space position (used for enemies and priests).
-    // Draws nothing if the position falls outside the camera's view frustum.
-    void render_floating_health_bar(const engine::ref<engine::shader>& text_shader,
+    void render_player_bars(const engine::ref<engine::shader>& mesh_shader, const player& player);
+    void render_bar(const engine::ref<engine::shader>& mesh_shader,
+        float x, float y, float width, float height,
+        float fill_percent, const glm::vec3& fill_colour);
+    void render_floating_bar(const engine::ref<engine::shader>& mesh_shader,
         const engine::perspective_camera& camera,
         const glm::vec3& world_position,
         float health_percent,
-        const glm::vec4& colour);
+        const glm::vec3& fill_colour);
+    void render_boss_bar_graphic(const engine::ref<engine::shader>& mesh_shader, float health_percent);
+    void render_boss_name_text(const engine::ref<engine::shader>& text_shader);
+    void render_dim_overlay(const engine::ref<engine::shader>& mesh_shader,
+        const engine::ref<engine::mesh>& quad_mesh,
+        const engine::ref<engine::material>& dim_material);
 
-    // Always-on-screen boss health bar at the bottom-centre of the screen.
-    void render_boss_health_bar(const engine::ref<engine::shader>& text_shader, float health_percent);
-
-    // Upgrade menu shown while the game is paused.
     void render_pause_menu(const engine::ref<engine::shader>& text_shader,
         const player& player,
-        int soul_count);
+        int soul_count,
+        int pause_selection,
+        float music_volume);
+    void render_defeat_screen(const engine::ref<engine::shader>& text_shader, int defeat_selection);
 
 private:
+    void render_menu_line(const engine::ref<engine::shader>& text_shader, const std::string& text, float x, float y, bool selected);
+
     engine::ref<engine::text_manager> m_text_manager;
+    engine::ref<engine::mesh> m_ui_quad;
+    engine::ref<engine::material> m_bar_material;
 };

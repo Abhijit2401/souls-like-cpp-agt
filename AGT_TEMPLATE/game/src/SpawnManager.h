@@ -5,20 +5,13 @@
 
 class player;
 
-// Owns the warrior/priest enemy roster: spawning, per-frame AI update,
-// player-attack hit detection, vanish/respawn handling, and rendering.
-// Extracted out of example_layer, which previously interleaved this with
-// scene setup, projectiles, souls, and HUD code in one 1000+ line file.
 class SpawnManager
 {
 public:
-    // Output of update() that example_layer turns into world objects it still
-    // owns (soul pickups, holy projectiles) so this class doesn't need to know
-    // about those unrelated systems.
     struct UpdateEvents
     {
         std::vector<glm::vec3> soul_drop_positions;
-        int projectile_spawn_requests = 0;
+        std::vector<glm::vec3> firebolt_spawn_positions;
     };
 
     void initialise(engine::ref<engine::skinned_mesh> berzerker_mesh,
@@ -28,9 +21,6 @@ public:
         float spawn_radius,
         float safe_radius);
 
-    // Creates a new enemy/priest game object, appends it to game_objects (so it
-    // participates in physics/collision alongside everything else), and adds
-    // its AI logic component to the roster.
     void spawn_enemy(const player& player, std::vector<engine::ref<engine::game_object>>& game_objects);
     void spawn_priest(const player& player, std::vector<engine::ref<engine::game_object>>& game_objects);
 

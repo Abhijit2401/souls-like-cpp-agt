@@ -33,6 +33,9 @@ public:
     // Check if the priest has disappeared
     bool has_vanished() const { return m_vanished; }
 
+    bool is_telegraphing_attack() const { return m_state == State::Attacking && m_attack_cooldown < 1.0f; }
+    float get_telegraph_progress() const { return glm::clamp(m_attack_cooldown / 1.0f, 0.f, 1.f); }
+
 private:
     //Helper to rotate the priest to face the player
     void face_player(float dt);

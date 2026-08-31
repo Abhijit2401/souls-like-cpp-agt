@@ -17,5 +17,9 @@ namespace engine
 
     private:
         inline static std::pair<float, float> s_last_position;
+        // Tracks whether the cursor was hidden (mouse-look mode) on the previous
+        // call, so the frame a menu closes can resync instead of computing a
+        // delta against a stale position (see mouse_position_impl).
+        inline static bool s_was_cursor_hidden = false;
     };
 }

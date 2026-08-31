@@ -27,6 +27,36 @@ namespace engine
             renderer_api::clear();
         }
 
+        static void clear_depth()
+        {
+            renderer_api::clear_depth();
+        }
+
+        static void enable_depth_test()
+        {
+            renderer_api::enable_depth_test();
+        }
+
+        static void disable_depth_test()
+        {
+            renderer_api::disable_depth_test();
+        }
+
+        static void enable_culling()
+        {
+            renderer_api::enable_culling();
+        }
+
+        static void disable_culling()
+        {
+            renderer_api::disable_culling();
+        }
+
+        static void bind_texture(uint32_t texture_id, uint32_t slot)
+        {
+            renderer_api::bind_texture(texture_id, slot);
+        }
+
         static void toggle_wireframe()
         {
             static bool is_wireframe = true;

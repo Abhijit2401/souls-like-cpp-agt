@@ -17,26 +17,35 @@ namespace engine
     public: 
         ~renderer_api() = default;
         static void init();  
-        static void clear();  
-        static void clear_color(const glm::vec4& color);  
+        static void clear();
+        // Clears only the depth buffer - for a depth-only target (e.g. shadow_map) that has no
+        // colour attachment to clear.
+        static void clear_depth();
+        static void clear_color(const glm::vec4& color);
         static void resize_viewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
         
         static void enable_wireframe();
 		static void enable_depth_mask();
 		static void disable_depth_mask();
-        static void disable_wireframe();  
-        
+		static void enable_depth_test();
+		static void disable_depth_test();
+		static void enable_culling();
+		static void disable_culling();
+		// Binds an arbitrary raw GL texture id (e.g. a framebuffer's colour attachment) to a
+		// texture unit - lets game code drive post-process passes without needing glad itself.
+		static void bind_texture(uint32_t texture_id, uint32_t slot);
+        static void disable_wireframe();
+
         static void draw_indexed(const ref<vertex_array>& vertex_array);
 		static void draw_indexed_lines(const ref<vertex_array>& vertex_array);
-        static void draw_indexed(const ref<mesh>& mesh);  
-        static void primitive_type(const e_primitive_type& type);  
+        static void draw_indexed(const ref<mesh>& mesh);
+        static void primitive_type(const e_primitive_type& type);
         static e_api_type api() { return s_renderer_api; }
 
 		static void line_width(float width);
 
-    private:  
-        static void enable_alpha();  
-        static void enable_culling();
+    private:
+        static void enable_alpha();
 
     private:
         static e_primitive_type s_primitive_type;

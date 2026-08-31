@@ -17,8 +17,10 @@
 
 example_layer::example_layer()
     :m_2d_camera(-1.6f, 1.6f, -0.9f, 0.9f),
-    m_3d_camera((float)engine::application::window().width(), (float)engine::application::window().height())
+    m_3d_camera((float)engine::application::window().width(), (float)engine::application::window().height(), 45.f, 0.1f, 400.f)
 {
+    m_shadow_renderer.initialise();
+
     //Shows mouse on main menu options screen before the main game start
     engine::application::window().show_mouse_cursor();
     m_game_state = GameState::MainMenu;
@@ -40,11 +42,9 @@ example_layer::example_layer()
     auto mesh_shader = engine::renderer::shaders_library()->get("mesh");
     auto text_shader = engine::renderer::shaders_library()->get("text_2D");
 
-    //ALL OF THE LIGHTS
-    //Directional low level light to mimic a sunset and the themic yellow sky using low intensity and ambience
     m_directionalLight.Color = glm::vec3(1.0f, 1.0f, 1.0f);
-    m_directionalLight.AmbientIntensity = 0.05f;
-    m_directionalLight.DiffuseIntensity = 0.4f;
+    m_directionalLight.AmbientIntensity = 0.12f;
+    m_directionalLight.DiffuseIntensity = 0.55f;
     m_directionalLight.Direction = glm::normalize(glm::vec3(1.0f, -1.0f, 0.0f));
 
     //Reddish light in front/near spawn
@@ -104,6 +104,10 @@ example_layer::example_layer()
     std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("gSpecularPower", 10.f);
     std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("transparency", 1.0f);
 
+    std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("fog_on", true);
+    std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("fog_factor_type", 0);
+    std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("fog_colour", glm::vec3(0.72f, 0.68f, 0.60f));
+
     std::dynamic_pointer_cast<engine::gl_shader>(text_shader)->bind();
     std::dynamic_pointer_cast<engine::gl_shader>(text_shader)->set_uniform("projection",
         glm::ortho(0.f, (float)engine::application::window().width(), 0.f,
@@ -112,14 +116,10 @@ example_layer::example_layer()
         glm::vec3(1.0f, 0.1f, 0.07f), glm::vec3(0.5f, 0.5f, 0.5f), 1.0f);
 
 
-    m_hologram_material = engine::material::create(32.0f,
-        glm::vec3(0.0f, 1.0f, 1.0f),
-        glm::vec3(0.0f, 1.0f, 1.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        0.6f);
+    m_combat_vfx.initialise();
+    m_lock_on.initialise();
 
-
-    m_skybox = engine::skybox::create(50.f,
+    m_skybox = engine::skybox::create(200.f,
         { engine::texture_2d::create("assets/textures/skybox/stormydays_ft.tga", true),
           engine::texture_2d::create("assets/textures/skybox/stormydays_lf.tga", true),
           engine::texture_2d::create("assets/textures/skybox/stormydays_bk.tga", true),
@@ -214,10 +214,10 @@ example_layer::example_layer()
     //Boss properties
     engine::game_object_properties boss_props;
     boss_props.animated_mesh = boss_mesh;
-    boss_props.scale = glm::vec3(0.3f);
+    boss_props.scale = glm::vec3(0.2f);
     boss_props.textures = boss_textures;
     boss_props.type = 0;
-    boss_props.mass = 1.0f;
+    boss_props.mass = 80.0f;
     boss_props.friction = 1.0f;
     boss_props.restitution = 0.0f;
     boss_props.bounding_shape = glm::vec3(1.0f, 1.8f, 1.0f);
@@ -378,19 +378,48 @@ example_layer::example_layer()
     for (int i = 0; i < num_trees; ++i)
     {
         float angle = (float)i / (float)num_trees * 2.f * 3.14f;
-        float randomisetree = ((float)rand() / (float)RAND_MAX - 2.f) * 0.1f;
-        angle += randomisetree;
-        float x_pos = sin(angle) * tree_circle_radius;
-        float z_pos = cos(angle) * tree_circle_radius;
+        float angle_jitter = ((float)rand() / (float)RAND_MAX - 0.5f) * 0.3f;
+        angle += angle_jitter;
+        float radius_jitter = ((float)rand() / (float)RAND_MAX - 0.5f) * 16.0f;
+        float radius = tree_circle_radius + radius_jitter;
+        float x_pos = sin(angle) * radius;
+        float z_pos = cos(angle) * radius;
         float tree_rotation = angle + (float)(i % 5);
+        float tree_scale_variation = 0.8f + ((float)rand() / (float)RAND_MAX) * 0.6f;
         glm::mat4 loop_tree_generation(1.0f);
         loop_tree_generation = glm::translate(loop_tree_generation, glm::vec3(x_pos, 0.0f, z_pos));
         loop_tree_generation = glm::rotate(loop_tree_generation, tree_rotation, m_tree->rotation_axis());
-        loop_tree_generation = glm::scale(loop_tree_generation, m_tree->scale() * scale_multiplier);
+        loop_tree_generation = glm::scale(loop_tree_generation, m_tree->scale() * scale_multiplier * tree_scale_variation);
         m_tree_transforms.push_back(loop_tree_generation);
     }
 
-    //PHYSICS to prevent the player from walking through it
+    const int num_rocks = 14;
+    for (int i = 0; i < num_rocks; ++i)
+    {
+        float angle = ((float)rand() / (float)RAND_MAX) * 6.28318f;
+        float radius = 12.0f + ((float)rand() / (float)RAND_MAX) * 22.0f;
+        glm::vec3 rock_pos(sin(angle) * radius, 0.0f, cos(angle) * radius);
+
+        glm::vec3 half_extents(
+            0.5f + ((float)rand() / (float)RAND_MAX) * 1.1f,
+            0.35f + ((float)rand() / (float)RAND_MAX) * 0.9f,
+            0.5f + ((float)rand() / (float)RAND_MAX) * 1.1f);
+
+        engine::ref<engine::cuboid> rock_shape = engine::cuboid::create(half_extents, false);
+        engine::game_object_properties rock_props;
+        rock_props.position = { rock_pos.x, half_extents.y, rock_pos.z };
+        rock_props.meshes = { rock_shape->mesh() };
+        rock_props.textures = terrain_textures;
+        rock_props.scale = glm::vec3(1.0f);
+        rock_props.is_static = true;
+        rock_props.type = 0;
+        rock_props.bounding_shape = half_extents;
+        rock_props.rotation_axis = glm::vec3(0.f, 1.f, 0.f);
+        rock_props.rotation_amount = ((float)rand() / (float)RAND_MAX) * 6.28318f;
+
+        m_rocks.push_back(engine::game_object::create(rock_props));
+    }
+
     m_game_objects.push_back(m_terrain);
     //Halberd
     if (m_halberd) m_game_objects.push_back(m_halberd);
@@ -402,6 +431,7 @@ example_layer::example_layer()
     if (m_castle_main) m_game_objects.push_back(m_castle_main);
     if (m_castle_tower_left) m_game_objects.push_back(m_castle_tower_left);
     if (m_castle_tower_right) m_game_objects.push_back(m_castle_tower_right);
+    for (const auto& rock : m_rocks) m_game_objects.push_back(rock);
 
     m_physics_manager = engine::bullet_manager::create(m_game_objects);
     //Sets up damping for the halberd projectile after its physical body is made
@@ -414,21 +444,26 @@ example_layer::example_layer()
 
     m_text_manager = engine::text_manager::create();
     m_hud.initialise(m_text_manager);
-    m_player.update_camera(m_3d_camera);
+    m_player.update_camera(m_3d_camera, engine::timestep(0.f));
+    m_dim_overlay_material = engine::material::create(1.0f, glm::vec3(0.04f), glm::vec3(0.f), glm::vec3(0.f), 0.55f);
 }
 
 example_layer::~example_layer() {}
 
 void example_layer::on_update(const engine::timestep& time_step)
 {
-    if (m_game_state == GameState::PauseMenu) return;
+    if (m_game_state == GameState::PauseMenu || m_game_state == GameState::Defeat) return;
 
     if (m_game_state == GameState::InGame)
     {
         m_physics_manager->dynamics_world_update(m_game_objects, double(time_step));
 
-        m_player.on_update(time_step);
-        m_player.update_camera(m_3d_camera);
+        bool middle_mouse_down = engine::input::mouse_button_pressed(engine::mouse_button_codes::MOUSE_BUTTON_MIDDLE);
+        m_lock_on.on_update(time_step, middle_mouse_down, m_3d_camera, m_spawn_manager, m_boss_logic, m_boss_object);
+
+        m_player.on_update(time_step, m_lock_on.is_locked(), m_lock_on.target_position());
+        m_player.update_camera(m_3d_camera, time_step);
+
         //AUDIO SETUP FOR ROLLING/DASHING AND ATTACKING
         //Attacking audio
         static bool was_attacking = false;
@@ -470,25 +505,18 @@ void example_layer::on_update(const engine::timestep& time_step)
             m_soul_pickups.push_back(new_soul);
         }
 
-        for (int i = 0; i < spawn_events.projectile_spawn_requests; i++)
-        {
-            HolyProjectile proj;
-            engine::game_object_properties proj_props;
-            proj_props.meshes = m_projectile_model->meshes();
-            proj_props.scale = glm::vec3(0.15f);
-            proj_props.position = m_player.object()->position() + glm::vec3(0.0f, 10.0f, 0.0f);
-            proj_props.bounding_shape = m_projectile_model->size() / 2.f;
-            engine::ref<engine::game_object> proj_obj = engine::game_object::create(proj_props);
 
-            proj.initialise(proj_obj);
-            m_projectiles.push_back(proj);
+        for (const auto& cast_position : spawn_events.firebolt_spawn_positions)
+        {
+            glm::vec3 aim_point = m_player.object()->position() + glm::vec3(0.f, 1.0f, 0.f);
+            glm::vec3 direction = aim_point - cast_position;
+            m_firebolts.push_back(Firebolt(cast_position, direction, 9.0f, 12.0f));
         }
 
-        //Updates the halberd projectiles
-        for (auto& proj : m_projectiles) {
-            if (proj.is_active()) {
-                proj.on_update(time_step);
-                float dmg = proj.check_collision(m_player.object());
+        for (auto& bolt : m_firebolts) {
+            if (bolt.is_active()) {
+                bolt.on_update(time_step);
+                float dmg = bolt.check_collision(m_player.object()->position());
                 if (dmg > 0.0f) m_player.take_damage(dmg);
             }
         }
@@ -511,7 +539,112 @@ void example_layer::on_update(const engine::timestep& time_step)
 
         m_audio_manager->update_with_camera(m_3d_camera);
         check_bounce();
+        if (m_player.is_dead())
+        {
+            m_game_state = GameState::Defeat;
+            m_defeat_selection = 0;
+            engine::application::window().show_mouse_cursor();
+        }
     }
+}
+
+void example_layer::render_shadow_casters(const engine::ref<engine::shader>& shader)
+{
+    engine::renderer::submit(shader, m_terrain);
+
+    for (const auto& tree_transform : m_tree_transforms) engine::renderer::submit(shader, tree_transform, m_tree);
+
+    if (m_tetrahedron) engine::renderer::submit(shader, m_tetrahedron);
+    if (m_stone_block) engine::renderer::submit(shader, m_stone_block);
+    if (m_castle_main) engine::renderer::submit(shader, m_castle_main);
+    if (m_castle_tower_left) engine::renderer::submit(shader, m_castle_tower_left);
+    if (m_castle_tower_right) engine::renderer::submit(shader, m_castle_tower_right);
+    for (const auto& rock : m_rocks) engine::renderer::submit(shader, rock);
+
+    if (m_halberd)
+    {
+        glm::mat4 halberd_transform(1.0f);
+        m_halberd->transform(halberd_transform);
+        for (const auto& mesh : m_halberd->meshes()) engine::renderer::submit(shader, mesh, halberd_transform);
+    }
+
+    m_spawn_manager.render(shader);
+
+    if (!m_boss_logic.has_vanished())
+    {
+        glm::mat4 boss_transform(1.0f);
+        m_boss_object->transform(boss_transform);
+        engine::renderer::submit(shader, boss_transform, m_boss_object);
+    }
+
+    engine::renderer::submit(shader, m_player.object());
+}
+
+void example_layer::render_static_world(const engine::ref<engine::shader>& mesh_shader, const glm::vec3& camera_pos)
+{
+    std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("gEyeWorldPos", camera_pos);
+    glm::mat4 skybox_transform(1.0f);
+    skybox_transform = glm::translate(skybox_transform, camera_pos);
+    std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("lighting_on", false);
+    for (const auto& texture : m_skybox->textures()) texture->bind();
+    engine::renderer::submit(mesh_shader, m_skybox, skybox_transform);
+    std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("lighting_on", true);
+    engine::renderer::submit(mesh_shader, m_terrain);
+
+    if (m_grass_model && m_grass_texture) {
+
+        std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", true);
+
+        m_grass_texture->bind();
+
+        engine::ref<engine::material> green_material = engine::material::create(
+            1.0f, glm::vec3(0.1f, 0.5f, 0.1f),
+            glm::vec3(0.1f, 0.5f, 0.1f),
+            glm::vec3(0.2f, 0.2f, 0.2f), 1.0f
+        );
+        green_material->submit(mesh_shader);
+
+        for (const auto& transform : m_grass_transforms) {
+            for (const auto& mesh : m_grass_model->meshes()) {
+                engine::renderer::submit(mesh_shader, mesh, transform);
+            }
+        }
+
+        std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", false);
+    }
+
+    for (const auto& tree_transform : m_tree_transforms) engine::renderer::submit(mesh_shader, tree_transform, m_tree);
+
+    //RENDERS PRIMATIVES
+    m_tetrahedron_material->submit(mesh_shader);
+    std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", true);
+
+    if (m_tetrahedron) {
+        m_tetrahedron->textures().at(0)->bind();
+        engine::renderer::submit(mesh_shader, m_tetrahedron);
+    }
+
+    if (m_stone_block) {
+        m_stone_block->textures().at(0)->bind();
+        engine::renderer::submit(mesh_shader, m_stone_block);
+    }
+    //Castle uses primatives to make a castle appearance
+    if (m_castle_main) {
+        m_castle_main->textures().at(0)->bind();
+
+        engine::renderer::submit(mesh_shader, m_castle_main);
+        if (m_castle_tower_left) engine::renderer::submit(mesh_shader, m_castle_tower_left);
+        if (m_castle_tower_right) engine::renderer::submit(mesh_shader, m_castle_tower_right);
+    }
+
+    //Scattered rocks
+    for (const auto& rock : m_rocks)
+    {
+        rock->textures().at(0)->bind();
+        engine::renderer::submit(mesh_shader, rock);
+    }
+
+    std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", false);
 }
 
 void example_layer::on_render()
@@ -526,94 +659,26 @@ void example_layer::on_render()
         m_hud.render_main_menu(text_shader, m_intro_texture, m_quad_mesh, m_menu_selection, m_player.get_mouse_sensitivity(), m_music_volume);
         engine::renderer::end_scene();
     }
-    else if (m_game_state == GameState::InGame || m_game_state == GameState::PauseMenu)
+    else if (m_game_state == GameState::InGame || m_game_state == GameState::PauseMenu || m_game_state == GameState::Defeat)
     {
+        m_shadow_renderer.render(m_directionalLight.Direction,
+            m_player.object() ? m_player.object()->position() : glm::vec3(0.f),
+            [&](const engine::ref<engine::shader>& shadow_shader) { render_shadow_casters(shadow_shader); });
+
         const auto mesh_shader = engine::renderer::shaders_library()->get("mesh");
         engine::renderer::begin_scene(m_3d_camera, mesh_shader);
+        m_shadow_renderer.bind_for_sampling(mesh_shader, 1);
 
         glm::vec3 camera_pos = m_3d_camera.position();
-        std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("gEyeWorldPos", camera_pos);
-        glm::mat4 skybox_transform(1.0f);
-        skybox_transform = glm::translate(skybox_transform, m_3d_camera.position());
-        std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("lighting_on", false);
-        for (const auto& texture : m_skybox->textures()) texture->bind();
-        engine::renderer::submit(mesh_shader, m_skybox, skybox_transform);
-        std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("lighting_on", true);
-        engine::renderer::submit(mesh_shader, m_terrain);
-
-        if (m_grass_model && m_grass_texture) {
-
-            std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", true);
-
-            m_grass_texture->bind();
-
-            engine::ref<engine::material> green_material = engine::material::create(
-                1.0f, glm::vec3(0.1f, 0.5f, 0.1f),
-                glm::vec3(0.1f, 0.5f, 0.1f),
-                glm::vec3(0.2f, 0.2f, 0.2f), 1.0f
-            );
-            green_material->submit(mesh_shader);
-
-            for (const auto& transform : m_grass_transforms) {
-                for (const auto& mesh : m_grass_model->meshes()) {
-                    engine::renderer::submit(mesh_shader, mesh, transform);
-                }
-            }
-
-            std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", false);
-        }
-        //Holographic halberd projectiles setup
-        m_hologram_material->submit(mesh_shader);
-        m_halberd->textures().at(0)->bind();
-        for (const auto& proj : m_projectiles) {
-            if (proj.is_active()) {
-                glm::mat4 proj_transform(1.0f);
-                proj_transform = glm::translate(proj_transform, proj.object()->position());
-                //Adds a rotation to seem like a falling spinning halberd magic spell
-                proj_transform = glm::rotate(proj_transform, proj.object()->rotation_amount(), proj.object()->rotation_axis());
-
-                proj_transform = glm::scale(proj_transform, glm::vec3(0.15f));
-                for (const auto& mesh : m_projectile_model->meshes()) {
-                    engine::renderer::submit(mesh_shader, mesh, proj_transform);
-                }
-            }
-        }
+        render_static_world(mesh_shader, camera_pos);
         std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", false);
-
-        //RENDERS ALL ENEMIES AND PRIESTS
         m_spawn_manager.render(mesh_shader);
-        //RENDERSE BOSS
+
         if (!m_boss_logic.has_vanished()) {
             glm::mat4 boss_transform(1.0f);
             m_boss_object->transform(boss_transform);
             engine::renderer::submit(mesh_shader, boss_transform, m_boss_object);
         }
-
-        for (const auto& tree_transform : m_tree_transforms) engine::renderer::submit(mesh_shader, tree_transform, m_tree);
-
-        //RENDERS PRIMATIVES
-        m_tetrahedron_material->submit(mesh_shader);
-        std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", true);
-
-        if (m_tetrahedron) {
-            m_tetrahedron->textures().at(0)->bind();
-            engine::renderer::submit(mesh_shader, m_tetrahedron);
-        }
-
-        if (m_stone_block) {
-            m_stone_block->textures().at(0)->bind();
-            engine::renderer::submit(mesh_shader, m_stone_block);
-        }
-        //Castle uses primatives to make a castle appearance
-        if (m_castle_main) {
-            m_castle_main->textures().at(0)->bind();
-
-            engine::renderer::submit(mesh_shader, m_castle_main);
-            if (m_castle_tower_left) engine::renderer::submit(mesh_shader, m_castle_tower_left);
-            if (m_castle_tower_right) engine::renderer::submit(mesh_shader, m_castle_tower_right);
-        }
-
-        std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", false);
 
         //Renders souls
         m_soul_material->submit(mesh_shader);
@@ -646,65 +711,88 @@ void example_layer::on_render()
         std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", false);
 
         engine::renderer::submit(mesh_shader, m_player.object());
+
+        m_combat_vfx.render(mesh_shader, camera_pos, m_player, m_spawn_manager, m_boss_logic, m_boss_object, m_firebolts);
+        m_lock_on.render_reticle(mesh_shader, camera_pos);
+
         engine::renderer::end_scene();
-        //2D HUD
+
+        engine::renderer::begin_scene(m_2d_camera, mesh_shader);
+        std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("lighting_on", false);
+        std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", false);
+        engine::render_command::disable_depth_test();
+
+        m_hud.render_player_bars(mesh_shader, m_player);
+        if (!m_boss_logic.is_dead())
+            m_hud.render_boss_bar_graphic(mesh_shader, m_boss_logic.get_health_percent());
+
+        engine::ref<engine::game_object> bar_target = m_lock_on.is_locked() ? m_lock_on.target()
+            : m_lock_on.find_closest_target_to_screen_center(m_3d_camera, m_spawn_manager, m_boss_logic, m_boss_object);
+        if (bar_target && bar_target != m_boss_object)
+        {
+            float target_pct = -1.0f;
+            glm::vec3 target_colour(1.f, 0.f, 0.f);
+
+            const auto& enemies = m_spawn_manager.enemies();
+            const auto& warriors = m_spawn_manager.warrior_objects();
+            for (size_t i = 0; i < warriors.size() && target_pct < 0.0f; i++)
+                if (warriors[i] == bar_target) target_pct = enemies[i].get_health_percent();
+
+            if (target_pct < 0.0f)
+            {
+                const auto& priests = m_spawn_manager.priests();
+                const auto& priest_objects = m_spawn_manager.priest_objects();
+                for (size_t i = 0; i < priest_objects.size() && target_pct < 0.0f; i++)
+                    if (priest_objects[i] == bar_target) { target_pct = priests[i].get_health_percent(); target_colour = glm::vec3(0.f, 0.8f, 1.f); }
+            }
+
+            if (target_pct >= 0.0f)
+                m_hud.render_floating_bar(mesh_shader, m_3d_camera, bar_target->position(), target_pct, target_colour);
+        }
+
+        engine::render_command::enable_depth_test();
+        engine::renderer::end_scene();
+
         const auto text_shader = engine::renderer::shaders_library()->get("text_2D");
         m_hud.render_game_hud(text_shader, m_player, m_soul_count);
+        if (!m_boss_logic.is_dead())
+            m_hud.render_boss_name_text(text_shader);
 
-        //FLOATING RED ENEMY HEALTH BARS taht are attached to the enemys
-        const auto& enemies = m_spawn_manager.enemies();
-        const auto& warriors = m_spawn_manager.warrior_objects();
-        for (size_t i = 0; i < enemies.size(); i++)
+        if (m_game_state == GameState::PauseMenu || m_game_state == GameState::Defeat)
         {
-            if (!enemies[i].is_dead())
-            {
-                m_hud.render_floating_health_bar(text_shader, m_3d_camera, warriors[i]->position(), enemies[i].get_health_percent(), glm::vec4(1.f, 0.f, 0.f, 1.f));
-            }
-        }
+            engine::renderer::begin_scene(m_2d_camera, mesh_shader);
+            m_hud.render_dim_overlay(mesh_shader, m_quad_mesh, m_dim_overlay_material);
+            engine::renderer::end_scene();
 
-        //Same floating health bars but for hte priests but theyre blue to allow the player to see the difference
-        const auto& priests = m_spawn_manager.priests();
-        const auto& priest_objects = m_spawn_manager.priest_objects();
-        for (size_t i = 0; i < priests.size(); i++)
-        {
-            if (!priests[i].is_dead())
-            {
-                m_hud.render_floating_health_bar(text_shader, m_3d_camera, priest_objects[i]->position(), priests[i].get_health_percent(), glm::vec4(0.f, 0.8f, 1.f, 1.f));
-            }
-        }
-
-        //Boss HUD Appearance which always is on the screen just like in other souls games
-        if (!m_boss_logic.is_dead()) {
-            m_hud.render_boss_health_bar(text_shader, m_boss_logic.get_health_percent());
-        }
-
-        //Upgrade pause menu that pauses the game and alllows the player to spend souls
-        if (m_game_state == GameState::PauseMenu)
-        {
-            m_hud.render_pause_menu(text_shader, m_player, m_soul_count);
+            if (m_game_state == GameState::PauseMenu)
+                m_hud.render_pause_menu(text_shader, m_player, m_soul_count, m_pause_selection, m_music_volume);
+            else
+                m_hud.render_defeat_screen(text_shader, m_defeat_selection);
         }
     }
 }
-//Keyboard set up for the HUD and upgrades and others when its paused ingame, ingame, upgrades in pause menu and main menu
+
 void example_layer::on_event(engine::event& event)
 {
     if (event.event_type() == engine::event_type_e::key_pressed)
     {
         auto& e = dynamic_cast<engine::key_pressed_event&>(event);
+        const GameState state_at_event = m_game_state;
 
         if (e.key_code() == engine::key_codes::KEY_E)
         {
-            if (m_game_state == GameState::InGame) {
+            if (state_at_event == GameState::InGame) {
                 m_game_state = GameState::PauseMenu;
+                m_pause_selection = 0;
                 engine::application::window().show_mouse_cursor();
             }
-            else if (m_game_state == GameState::PauseMenu) {
+            else if (state_at_event == GameState::PauseMenu) {
                 m_game_state = GameState::InGame;
                 engine::application::window().hide_mouse_cursor();
             }
         }
 
-        if (m_game_state == GameState::InGame)
+        if (state_at_event == GameState::InGame)
         {
             if (e.key_code() == engine::key_codes::KEY_P)
             {
@@ -716,32 +804,65 @@ void example_layer::on_event(engine::event& event)
             }
         }
 
-        if (m_game_state == GameState::PauseMenu)
+        if (state_at_event == GameState::PauseMenu)
         {
-            if (e.key_code() == engine::key_codes::KEY_1)
+            if (e.key_code() == engine::key_codes::KEY_W) { if (m_pause_selection > 0) m_pause_selection--; }
+            if (e.key_code() == engine::key_codes::KEY_S) { if (m_pause_selection < 6) m_pause_selection++; }
+
+            if (e.key_code() == engine::key_codes::KEY_SPACE)
             {
-                if (m_soul_count >= 5) {
-                    m_soul_count -= 5;
-                    m_player.increase_damage(10.0f);
+                if (m_pause_selection == 0) { if (m_soul_count >= 5) { m_soul_count -= 5; m_player.increase_damage(10.0f); } }
+                else if (m_pause_selection == 1) { if (m_soul_count >= 5) { m_soul_count -= 5; m_player.increase_speed(2.0f); } }
+                else if (m_pause_selection == 2) { if (m_soul_count >= 10) { m_soul_count -= 10; m_player.add_potion(1); } }
+                else if (m_pause_selection == 5)
+                {
+                    m_game_state = GameState::MainMenu;
+                    engine::application::window().show_mouse_cursor();
+                }
+                else if (m_pause_selection == 6)
+                {
+                    engine::application::exit();
                 }
             }
-            if (e.key_code() == engine::key_codes::KEY_2)
+
+            if (m_pause_selection == 3)
             {
-                if (m_soul_count >= 5) {
-                    m_soul_count -= 5;
-                    m_player.increase_speed(2.0f);
-                }
+                if (e.key_code() == engine::key_codes::KEY_A) { float s = m_player.get_mouse_sensitivity(); m_player.set_mouse_sensitivity(glm::max(s - 0.05f, 0.05f)); }
+                if (e.key_code() == engine::key_codes::KEY_D) { float s = m_player.get_mouse_sensitivity(); m_player.set_mouse_sensitivity(s + 0.05f); }
             }
-            if (e.key_code() == engine::key_codes::KEY_3)
+            else if (m_pause_selection == 4) // Volume
             {
-                if (m_soul_count >= 10) {
-                    m_soul_count -= 10;
-                    m_player.add_potion(1);
+                if (e.key_code() == engine::key_codes::KEY_A) { m_music_volume = glm::max(m_music_volume - 0.05f, 0.0f); m_audio_manager->volume("music", m_music_volume); }
+                if (e.key_code() == engine::key_codes::KEY_D) { m_music_volume = glm::min(m_music_volume + 0.05f, 1.0f); m_audio_manager->volume("music", m_music_volume); }
+            }
+        }
+        if (state_at_event == GameState::Defeat)
+        {
+            if (e.key_code() == engine::key_codes::KEY_W) { if (m_defeat_selection > 0) m_defeat_selection--; }
+            if (e.key_code() == engine::key_codes::KEY_S) { if (m_defeat_selection < 2) m_defeat_selection++; }
+
+            if (e.key_code() == engine::key_codes::KEY_SPACE)
+            {
+                if (m_defeat_selection == 0) // Respawn
+                {
+                    m_player.respawn();
+                    m_game_state = GameState::InGame;
+                    engine::application::window().hide_mouse_cursor();
+                }
+                else if (m_defeat_selection == 1) // Return to Main Menu
+                {
+                    m_player.respawn();
+                    m_game_state = GameState::MainMenu;
+                    engine::application::window().show_mouse_cursor();
+                }
+                else if (m_defeat_selection == 2) // Quit Game
+                {
+                    engine::application::exit();
                 }
             }
         }
 
-        if (m_game_state == GameState::MainMenu)
+        if (state_at_event == GameState::MainMenu)
         {
             if (e.key_code() == engine::key_codes::KEY_SPACE)
             {
@@ -770,6 +891,10 @@ void example_layer::on_event(engine::event& event)
         {
             engine::render_command::toggle_wireframe();
         }
+        if (e.key_code() == engine::key_codes::KEY_F2)
+        {
+            m_player.toggle_invincible();
+        }
     }
 }
 //from tutorial i dont use the check_bounce bounce sound effect anymore
@@ -783,3 +908,4 @@ void example_layer::check_bounce()
     }
     m_prev_halberd_y_vel = current_vel;
 }
+

@@ -2,7 +2,8 @@
 #include "Player.h"
 #include "engine/core/input.h"
 #include "engine/key_codes.h"
-#include <glm/gtc/matrix_transform.hpp> 
+#include <glm/gtc/matrix_transform.hpp>
+#include <cstdlib>
 
 player::player()
 {
@@ -51,6 +52,12 @@ void player::initialise(engine::ref<engine::game_object> object)
     m_object->animated_mesh()->switch_animation(m_anim_idle);
     m_current_state = PlayerState::Idle;
 
+    const auto& player_animations = m_object->animated_mesh()->animations();
+    LOG_CORE_INFO("Player model has {0} animation clip(s):", player_animations.size());
+    for (size_t i = 0; i < player_animations.size(); i++)
+    {
+        LOG_CORE_INFO("  [{0}] \"{1}\" duration={2}", i, player_animations[i]->mName.C_Str(), player_animations[i]->mDuration);
+    }
     m_object->set_rotation_axis(glm::vec3(0.f, 1.f, 0.f));
     m_object->set_rotation_amount(0.0f);
 }
@@ -59,13 +66,17 @@ bool player::is_attacking() const {
     return m_current_state == PlayerState::Attacking;
 }
 
-//Handles incoming damage
+float player::get_attack_progress() const {
+    if (m_current_state != PlayerState::Attacking || m_attack_duration <= 0.f) return 0.f;
+    return glm::clamp(1.0f - (m_animation_timer / m_attack_duration), 0.f, 1.f);
+}
 void player::take_damage(float amount)
 {
-    // Rolling/Dodging/Dashing or whatever u want to call it to implement the dark souls dodge effect which causes invulnerability
+    if (m_invincible) return;
     if (m_current_state == PlayerState::Rolling) return;
 
     m_health -= amount;
+    trigger_camera_shake(0.3f, 0.18f);
     if (m_health <= 0.0f) {
         m_health = 0.0f;
         m_current_state = PlayerState::Dead;
@@ -73,13 +84,35 @@ void player::take_damage(float amount)
     }
 }
 
-//Handles healing using the potion
+void player::trigger_camera_shake(float duration, float magnitude)
+{
+    if (magnitude < m_shake_magnitude && m_shake_time_left > 0.0f) return;
+    m_shake_duration = duration;
+    m_shake_time_left = duration;
+    m_shake_magnitude = magnitude;
+}
 void player::heal(float amount)
 {
     if (m_current_state == PlayerState::Dead) return;
 
     m_health += amount;
     if (m_health > m_max_health) m_health = m_max_health;
+}
+
+void player::respawn()
+{
+    m_health = m_max_health;
+    m_stamina = m_max_stamina;
+    m_speed = 0.0f;
+    m_current_state = PlayerState::Idle;
+    if (m_object)
+    {
+        m_object->set_position(glm::vec3(0.f, 0.09f, 10.f));
+        m_object->set_velocity(glm::vec3(0.f));
+        m_object->set_forward(glm::vec3(0.f, 0.f, -1.f));
+        m_object->animated_mesh()->switch_root_movement(false);
+        m_object->animated_mesh()->switch_animation(m_anim_idle);
+    }
 }
 
 //If the player uses the potion
@@ -95,12 +128,10 @@ bool player::use_potion()
     return false;
 }
 
-void player::on_update(const engine::timestep& time_step)
+void player::on_update(const engine::timestep& time_step, bool has_lock_on_target, const glm::vec3& lock_on_target_position)
 {
     if (m_current_state == PlayerState::Dead) return;
 
-    //STAMINA REGEN
-    //Only regenerate if not rolling or attacking just like in souls games
     if (m_current_state != PlayerState::Rolling && m_current_state != PlayerState::Attacking)
     {
         m_stamina += m_stamina_regen * (float)time_step;
@@ -109,8 +140,29 @@ void player::on_update(const engine::timestep& time_step)
 
     //CAMERA CALCULATION
     auto [mouse_delta_x, mouse_delta_y] = engine::input::mouse_position();
-    m_camera_yaw += mouse_delta_x * s_mouse_sensitivity;
-    m_camera_pitch += mouse_delta_y * s_mouse_sensitivity;
+
+    if (has_lock_on_target)
+    {
+        glm::vec3 eye = m_object->position() + glm::vec3(0.f, 1.f, 0.f);
+        glm::vec3 to_target = (lock_on_target_position + glm::vec3(0.f, 1.f, 0.f)) - eye;
+        if (glm::length(to_target) > 0.001f)
+        {
+            glm::vec3 dir = glm::normalize(to_target);
+            float target_yaw = glm::degrees(atan2(dir.z, dir.x));
+            float target_pitch = glm::degrees(asin(glm::clamp(dir.y, -1.0f, 1.0f)));
+            float yaw_diff = target_yaw - m_camera_yaw;
+            while (yaw_diff > 180.0f) yaw_diff -= 360.0f;
+            while (yaw_diff < -180.0f) yaw_diff += 360.0f;
+            float max_yaw_step = 220.0f * (float)time_step;
+            m_camera_yaw += glm::clamp(yaw_diff, -max_yaw_step, max_yaw_step);
+            m_camera_pitch = glm::mix(m_camera_pitch, target_pitch, glm::clamp(6.0f * (float)time_step, 0.0f, 1.0f));
+        }
+    }
+    else
+    {
+        m_camera_yaw += mouse_delta_x * s_mouse_sensitivity;
+        m_camera_pitch += mouse_delta_y * s_mouse_sensitivity;
+    }
 
     // Clamps the camera pitch so it doesn't look too far up or down as requested to fix from feedback from first milestone
     if (m_camera_pitch > 30.f) m_camera_pitch = 30.f;
@@ -185,55 +237,65 @@ void player::on_update(const engine::timestep& time_step)
         if (engine::input::key_pressed(engine::key_codes::KEY_A)) move_direction -= cam_right_2d;
         if (engine::input::key_pressed(engine::key_codes::KEY_D)) move_direction += cam_right_2d;
 
-        if (glm::length(move_direction) > 0.f)
+        bool has_input = glm::length(move_direction) > 0.f;
+        float target_speed = has_input ? m_run_speed : 0.f;
+        if (m_speed < target_speed)
+            m_speed = glm::min(m_speed + m_acceleration * (float)time_step, target_speed);
+        else if (m_speed > target_speed)
+            m_speed = glm::max(m_speed - m_deceleration * (float)time_step, target_speed);
+
+        if (has_input)
         {
-            m_speed = m_run_speed;
-            m_object->set_forward(glm::normalize(move_direction));
+            m_last_movement_direction = glm::normalize(move_direction);
 
             if (m_current_state != PlayerState::Walking)
             {
                 m_object->animated_mesh()->switch_animation(m_anim_walk);
                 m_current_state = PlayerState::Walking;
             }
-
-            //Rotates the player model to face the direction of movement
-            float theta = atan2(m_object->forward().x, m_object->forward().z);
-            m_object->set_rotation_amount(theta);
         }
-        else
+        else if (m_speed <= 0.001f)
         {
-            //Stops movement if no keys are pressed
-            m_speed = 0.f;
             if (m_current_state != PlayerState::Idle)
             {
                 m_object->animated_mesh()->switch_animation(m_anim_idle);
                 m_current_state = PlayerState::Idle;
             }
         }
+        if (has_lock_on_target)
+        {
+            glm::vec3 to_target = lock_on_target_position - m_object->position();
+            to_target.y = 0.f;
+            if (glm::length(to_target) > 0.001f)
+                m_object->set_forward(glm::normalize(to_target));
+        }
+        else if (has_input)
+        {
+            m_object->set_forward(m_last_movement_direction);
+        }
 
-        //Checks if attack key space bar is pressed
-        if (engine::input::key_pressed(engine::key_codes::KEY_SPACE))
+        if (engine::input::mouse_button_pressed(engine::mouse_button_codes::MOUSE_BUTTON_LEFT))
             attack();
 
-        //Checks input for roll input key which is L shift
         bool shift_down = engine::input::key_pressed(engine::key_codes::KEY_LEFT_SHIFT);
         if (shift_down && !m_shift_pressed)
         {
-            roll();
+            roll(has_input ? m_last_movement_direction : m_object->forward());
         }
-        m_shift_pressed = shift_down; //Updates tracking variable for roll trigger
+        m_shift_pressed = shift_down;
 
-        //Applies final velocity vector (movement + gravity)
         glm::vec3 current_y_velocity = m_object->velocity();
         glm::vec3 velocity_vector = glm::vec3(0.f);
-        if (m_speed > 0.f) velocity_vector = m_object->forward() * m_speed;
+        if (m_speed > 0.f) velocity_vector = m_last_movement_direction * m_speed;
         m_object->set_velocity(glm::vec3(velocity_vector.x, current_y_velocity.y, velocity_vector.z));
 
-        //Fixes rotation in case the forward vector was updated
         float theta = atan2(m_object->forward().x, m_object->forward().z);
         m_object->set_rotation_axis(glm::vec3(0.f, 1.f, 0.f));
         m_object->set_rotation_amount(theta);
-        m_object->animated_mesh()->on_update(time_step);
+        float anim_speed_scale = (m_current_state == PlayerState::Walking && m_run_speed > 0.f)
+            ? glm::clamp(m_speed / m_run_speed, 0.35f, 1.0f)
+            : 1.0f;
+        m_object->animated_mesh()->on_update(time_step.seconds() * anim_speed_scale);
     }
 }
 
@@ -241,8 +303,7 @@ void player::turn(float angle) {
     m_object->set_forward(glm::rotate(m_object->forward(), angle, glm::vec3(0.f, 1.f, 0.f)));
 }
 
-//Updates the 3D camera position and view matrix
-void player::update_camera(engine::perspective_camera& camera) {
+void player::update_camera(engine::perspective_camera& camera, const engine::timestep& time_step) {
     if (!m_object) return;
     //Camera targets player's neck height (player_pos + 1m up)
     glm::vec3 player_pos = m_object->position() + glm::vec3(0.f, 1.f, 0.f);
@@ -255,7 +316,28 @@ void player::update_camera(engine::perspective_camera& camera) {
         cam_pos.y = 0.5f;
     }
 
+    if (m_shake_time_left > 0.0f)
+    {
+        float decay = m_shake_time_left / m_shake_duration;
+        float amount = m_shake_magnitude * decay;
+        glm::vec3 shake_offset(
+            (((float)rand() / (float)RAND_MAX) - 0.5f) * amount,
+            (((float)rand() / (float)RAND_MAX) - 0.5f) * amount,
+            (((float)rand() / (float)RAND_MAX) - 0.5f) * amount);
+        cam_pos += shake_offset;
+        player_pos += shake_offset * 0.4f;
+        m_shake_time_left -= (float)time_step;
+        if (m_shake_time_left < 0.0f) m_shake_time_left = 0.0f;
+    }
+
     camera.set_view_matrix(cam_pos, player_pos);
+    float target_fov = m_base_fov;
+    if (m_current_state == PlayerState::Rolling)
+        target_fov = m_base_fov + 15.0f;
+    else if (m_run_speed > 0.f)
+        target_fov = m_base_fov + 5.0f * glm::clamp(m_speed / m_run_speed, 0.0f, 1.0f);
+    m_current_fov = glm::mix(m_current_fov, target_fov, glm::clamp(m_fov_lerp_speed * (float)time_step, 0.0f, 1.0f));
+    camera.set_fov(m_current_fov);
 }
 
 //Initiates the attack sequence
@@ -268,6 +350,7 @@ void player::attack() {
     m_current_state = PlayerState::Attacking;
     m_speed = 0.0f; //Stops horizontal movement
     m_object->set_velocity(glm::vec3(0.f, m_object->velocity().y, 0.f));
+    trigger_camera_shake(0.15f, 0.05f);
 
     //Calculates attack duration from animation data
     float anim_dur = 1.0f;
@@ -275,10 +358,10 @@ void player::attack() {
         anim_dur = (float)m_object->animated_mesh()->animations().at(m_anim_attack)->mDuration / 30.0f;
 
     m_animation_timer = anim_dur; //Sets timer for state exit
+    m_attack_duration = anim_dur;
 }
 
-//Initiates the Roll/Dash sequence
-void player::roll() {
+void player::roll(const glm::vec3& direction) {
     if (m_stamina < 20.0f) return; //Checks stamina cost
     m_stamina -= 20.0f;
 
@@ -286,7 +369,7 @@ void player::roll() {
     m_object->animated_mesh()->switch_animation(m_anim_dash);
 
     m_current_state = PlayerState::Rolling;
-    m_locked_roll_direction = m_object->forward(); //Locks the roll direction at start
+    m_locked_roll_direction = direction;
 
     // Defaults roll direction if standing still
     if (glm::length(m_locked_roll_direction) < 0.01f)

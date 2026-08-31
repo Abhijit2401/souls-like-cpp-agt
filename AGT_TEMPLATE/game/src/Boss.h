@@ -29,6 +29,16 @@ public:
     //Checks if the boss has disappeared
     bool has_vanished() const { return m_vanished; }
 
+    //ATTACK TELEGRAPH/STRIKE: mirrors the windup/strike/recovery timing inside attack_player()
+    bool is_telegraphing_attack() const { return m_state == State::Attacking && m_attack_cooldown < m_telegraph_duration; }
+    bool is_striking_attack() const { return m_state == State::Attacking && m_attack_cooldown >= m_telegraph_duration && m_attack_cooldown < m_telegraph_duration + m_strike_duration; }
+    float get_telegraph_progress() const { return m_telegraph_duration > 0.f ? glm::clamp(m_attack_cooldown / m_telegraph_duration, 0.f, 1.f) : 0.f; }
+    float get_strike_progress() const { return m_strike_duration > 0.f ? glm::clamp((m_attack_cooldown - m_telegraph_duration) / m_strike_duration, 0.f, 1.f) : 0.f; }
+    float get_attack_swing_angle() const { return m_attack_swing_angle; }
+    enum class AttackType { Melee, AOE };
+    AttackType get_current_attack_type() const { return m_current_attack_type; }
+    float get_aoe_radius() const { return m_aoe_radius; }
+
 private:
     //AI MOVEMENT AND ATTACK FUNCTIONS
     void chase_player(float dt);
@@ -56,8 +66,17 @@ private:
     uint32_t m_anim_walk = 3;
 
     float m_attack_cooldown = 0.0f;
+    float m_telegraph_duration = 1.3f;
+    float m_strike_duration = 0.3f;
+    float m_recovery_duration = 1.4f;
+    float m_attack_swing_angle = 45.0f;
+    AttackType m_current_attack_type = AttackType::Melee;
+    float m_aoe_radius = 6.0f;
     bool m_damage_dealt = false;
     bool m_damage_signal = false;
+
+    int m_circle_direction = 1;
+    float m_circle_switch_timer = 0.0f;
 
     float m_death_timer = 0.0f;
     bool m_vanished = false;

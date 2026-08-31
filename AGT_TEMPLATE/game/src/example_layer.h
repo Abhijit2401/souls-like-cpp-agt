@@ -3,9 +3,12 @@
 #include "Player.h"
 #include "SoulFragment.h"
 #include "Boss.h"
-#include "HolyProjectile.h"
+#include "Firebolt.h"
 #include "SpawnManager.h"
 #include "Hud.h"
+#include "CombatVfx.h"
+#include "LockOnSystem.h"
+#include "ShadowRenderer.h"
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -21,18 +24,25 @@ public:
 	void on_event(engine::event& event) override;
 
 private:
-	// Game state management for Main Menu, Ingame, and Pause Menu
 	enum class GameState
 	{
 		MainMenu,
 		InGame,
-		PauseMenu
+		PauseMenu,
+		Defeat
 	};
 	GameState m_game_state;
+
+	ShadowRenderer m_shadow_renderer;
+	void render_shadow_casters(const engine::ref<engine::shader>& shader);
+	void render_static_world(const engine::ref<engine::shader>& mesh_shader, const glm::vec3& camera_pos);
 	engine::ref<engine::texture_2d> m_intro_texture;
 	engine::ref<engine::mesh> m_quad_mesh;
 	int m_menu_selection = 0;
+	int m_pause_selection = 0;
+	int m_defeat_selection = 0;
 	float m_music_volume = 0.1f;
+	engine::ref<engine::material> m_dim_overlay_material{};
 
 	// Structure for a collectable soul fragment
 	struct SoulFragmentPickup
@@ -66,9 +76,12 @@ private:
 	float m_spawn_radius = 30.0f; // Max distance from center
 	float m_safe_radius = 10.0f;  // Min distance from player that they can spawn
 
-	//Projectiles
-	std::vector<HolyProjectile> m_projectiles; // Halberd projectiles made by the priests
-	engine::ref<engine::material> m_hologram_material{}; // Material for the "holographic" semi translucent "magical" projectiles
+	std::vector<Firebolt> m_firebolts;
+
+	CombatVfx m_combat_vfx;
+
+	// Elden-Ring-style lock-on targeting - see LockOnSystem.h.
+	LockOnSystem m_lock_on;
 
 	//Grass
 	engine::ref<engine::model> m_grass_model{};
@@ -90,6 +103,8 @@ private:
 	engine::ref<engine::material>		m_tetrahedron_material{};
 	//Cuboid stone block
 	engine::ref<engine::game_object>	m_stone_block{};
+	//Scattered rock props (visual variety - see constructor)
+	std::vector<engine::ref<engine::game_object>> m_rocks{};
 
 	//Castle Cuboids
 	engine::ref<engine::game_object>    m_castle_main{};

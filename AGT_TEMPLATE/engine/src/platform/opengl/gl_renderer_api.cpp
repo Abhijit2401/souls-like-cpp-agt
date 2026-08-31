@@ -40,6 +40,11 @@ void engine::renderer_api::clear()
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
+void engine::renderer_api::clear_depth()
+{
+    glClear(GL_DEPTH_BUFFER_BIT);
+}
+
 void engine::renderer_api::clear_color(const glm::vec4& color)
 {
     glClearColor(color.r, color.g, color.b, color.a);
@@ -84,8 +89,19 @@ void engine::renderer_api::enable_alpha()
 
 void engine::renderer_api::enable_culling()
 {
-    glEnable(GL_CULL_FACE); 
-    glCullFace(GL_BACK); 
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+}
+
+void engine::renderer_api::disable_culling()
+{
+    glDisable(GL_CULL_FACE);
+}
+
+void engine::renderer_api::bind_texture(uint32_t texture_id, uint32_t slot)
+{
+    glActiveTexture(GL_TEXTURE0 + slot);
+    glBindTexture(GL_TEXTURE_2D, texture_id);
 }
 
 void engine::renderer_api::enable_depth_mask()
@@ -96,6 +112,16 @@ void engine::renderer_api::enable_depth_mask()
 void engine::renderer_api::disable_depth_mask()
 {
 	glDepthMask(GL_FALSE);
+}
+
+void engine::renderer_api::enable_depth_test()
+{
+	glEnable(GL_DEPTH_TEST);
+}
+
+void engine::renderer_api::disable_depth_test()
+{
+	glDisable(GL_DEPTH_TEST);
 }
 
 

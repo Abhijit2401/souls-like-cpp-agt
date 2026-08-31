@@ -12,7 +12,6 @@ void Enemy::initialise(engine::ref<engine::game_object> object,
     m_object = object;
     m_player_target = player_target;
 
-    //RESET PHYSICAL STATE
     glm::vec3 correct_position = position;
     correct_position.y = 0.09f; //Fixes the spawn height
     m_object->set_position(correct_position);
@@ -20,7 +19,6 @@ void Enemy::initialise(engine::ref<engine::game_object> object,
     m_object->set_offset(glm::vec3(0.0f, -9.0f, 0.0f));
     m_object->set_velocity(glm::vec3(0.0f, -5.0f, 0.0f));
 
-    //RESETS ENEMY STATS which we need to properly do respawns when its initialised
     m_health = 100.0f;
     m_souls_dropped = false;  //Allows souls ot be dropped on death again
     m_vanished = false;
@@ -120,6 +118,13 @@ void Enemy::on_update(const engine::timestep& time_step)
             m_attack_cooldown = 0.0f;
             m_damage_dealt = false;
             m_damage_signal = false;
+
+            // Randomise pacing and swing angle per-attack so berserkers don't all attack in
+            // lockstep with an identical-looking slash every time.
+            float speed_variance = 0.75f + ((float)rand() / (float)RAND_MAX) * 0.6f;
+            m_telegraph_duration = 2.5f * speed_variance;
+            m_recovery_duration = 1.0f * speed_variance;
+            m_attack_swing_angle = -80.0f + ((float)rand() / (float)RAND_MAX) * 160.0f;
         }
         //Transitions back to idle if player gets too far away
         else if (dist > m_detection_radius * 1.5f) {
@@ -164,8 +169,7 @@ void Enemy::attack_player(float dt)
 {
     m_attack_cooldown += dt;
 
-    // Check for damage window in the middle of the attack animation
-    if (m_attack_cooldown > 1.5f && m_attack_cooldown < 2.0f && !m_damage_dealt)
+    if (is_striking_attack() && !m_damage_dealt)
     {
         glm::vec3 to_player = m_player_target->position() - m_object->position();
         float dist = glm::length(to_player);
@@ -181,7 +185,7 @@ void Enemy::attack_player(float dt)
         }
     }
 
-    if (m_attack_cooldown >= 2.5f) //End of attack recovery
+    if (m_attack_cooldown >= m_telegraph_duration + m_strike_duration + m_recovery_duration) //End of attack recovery
     {
         m_state = State::Chasing;
         m_object->animated_mesh()->switch_animation(m_anim_walk);

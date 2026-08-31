@@ -140,6 +140,11 @@ namespace engine
 
 		void set_view_matrix(glm::vec3 position, glm::vec3 look_at);
 
+		// Recomputes the projection matrix for a new vertical FOV (degrees).
+		// Used for a sprint/dash "FOV kick" to sell a change in speed.
+		void set_fov(float fov_degrees);
+		float fov() const { return m_fov; }
+
     private: 
         void process_mouse(float mouse_delta_x, float mouse_delta_y, bool constrain_pitch = true);
         void move(e_direction direction, timestep ts); 

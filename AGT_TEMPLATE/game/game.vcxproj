@@ -134,25 +134,33 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="src\Boss.h" />
+    <ClInclude Include="src\CombatVfx.h" />
     <ClInclude Include="src\Enemy.h" />
     <ClInclude Include="src\example_layer.h" />
-    <ClInclude Include="src\HolyProjectile.h" />
+    <ClInclude Include="src\Firebolt.h" />
     <ClInclude Include="src\Hud.h" />
+    <ClInclude Include="src\LockOnSystem.h" />
     <ClInclude Include="src\Player.h" />
     <ClInclude Include="src\Priest.h" />
+    <ClInclude Include="src\ShadowRenderer.h" />
+    <ClInclude Include="src\SlashEffect.h" />
     <ClInclude Include="src\SoulFragment.h" />
     <ClInclude Include="src\SpawnManager.h" />
     <ClInclude Include="src\tetrahedron.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\Boss.cpp" />
+    <ClCompile Include="src\CombatVfx.cpp" />
     <ClCompile Include="src\Enemy.cpp" />
     <ClCompile Include="src\example_layer.cpp" />
+    <ClCompile Include="src\Firebolt.cpp" />
     <ClCompile Include="src\game.cpp" />
-    <ClCompile Include="src\HolyProjectile.cpp" />
     <ClCompile Include="src\Hud.cpp" />
+    <ClCompile Include="src\LockOnSystem.cpp" />
     <ClCompile Include="src\Player.cpp" />
     <ClCompile Include="src\Priest.cpp" />
+    <ClCompile Include="src\ShadowRenderer.cpp" />
+    <ClCompile Include="src\SlashEffect.cpp" />
     <ClCompile Include="src\SoulFragment.cpp" />
     <ClCompile Include="src\SpawnManager.cpp" />
     <ClCompile Include="src\tetrahedron.cpp" />

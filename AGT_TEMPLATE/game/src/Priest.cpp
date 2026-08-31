@@ -14,7 +14,7 @@ void Priest::initialise(engine::ref<engine::game_object> object,
     // Physics Position
     m_object->set_position(glm::vec3(position.x, 0.09f, position.z));
 
-    // Visual Offset (Sinking the mesh slightly into the physics body)
+    // Visual Offset
     m_object->set_offset(glm::vec3(0.0f, -9.0f, 0.0f));
     m_object->set_velocity(glm::vec3(0.0f, -5.0f, 0.0f));
 
@@ -39,7 +39,6 @@ void Priest::initialise(engine::ref<engine::game_object> object,
     m_state = State::Idle;
 }
 
-// Resets and returns true if a projectile should be spawned this frame
 bool Priest::should_spawn_projectile() {
     if (m_spawn_signal) {
         m_spawn_signal = false;
@@ -50,48 +49,36 @@ bool Priest::should_spawn_projectile() {
 
 void Priest::on_update(const engine::timestep& time_step)
 {
-    // Keep on floor if alive
+
     if (m_state != State::Dead) {
         if (m_object->position().y < 0.09f) {
             glm::vec3 current_pos = m_object->position();
             m_object->set_position(glm::vec3(current_pos.x, 0.09f, current_pos.z));
         }
     }
-
-    // Apply Visual Offset
     m_object->set_offset(glm::vec3(0.0f, -9.0f, 0.0f));
     m_object->set_rotation_axis(glm::vec3(0.f, 1.f, 0.f));
-
-    //DEAD STATE LOGIC AND SETUP
     if (m_state == State::Dead) {
         m_object->animated_mesh()->on_update(time_step);
 
         if (!m_vanished) {
             m_death_timer += (float)time_step;
-
-            // Calculate exact animation length to prevent looping
             float anim_duration = 3.0f;
             if (m_object->animated_mesh()->animations().size() > m_anim_death) {
-                // Divide by ticks per second which is apparently 30 according to google
                 anim_duration = (float)m_object->animated_mesh()->animations().at(m_anim_death)->mDuration / 30.0f;
             }
-
-            // Vanish right when animation finishes
             if (m_death_timer > anim_duration) {
                 m_vanished = true;
-                // Move underground
                 m_object->set_position(glm::vec3(0.0f, -100.0f, 0.0f));
             }
         }
         return;
     }
-    //AI FSM LOGIC
     float dist = glm::distance(m_object->position(), m_player_target->position());
 
     switch (m_state)
     {
     case State::Idle:
-        // Detects player and starts chasing
         if (dist < m_detection_radius) {
             m_state = State::Chasing;
             m_object->animated_mesh()->switch_animation(m_anim_walk);
@@ -99,21 +86,18 @@ void Priest::on_update(const engine::timestep& time_step)
         break;
 
     case State::Chasing:
-        // Changes to running away and fleeing if the character is too close to allow for a more interactive enemy
         if (dist < m_flee_radius) {
             m_state = State::Fleeing;
             m_object->animated_mesh()->switch_animation(m_anim_walk);
         }
-        // Transitions to attack if within range
         else if (dist <= m_attack_range) {
-            m_object->set_velocity(glm::vec3(0.f, m_object->velocity().y, 0.f)); // Stops moving
+            m_object->set_velocity(glm::vec3(0.f, m_object->velocity().y, 0.f));
             m_state = State::Attacking;
             m_object->animated_mesh()->switch_animation(m_anim_attack);
             m_attack_cooldown = 0.0f;
             m_spawn_signal = false;
             m_has_spawned_this_attack = false;
         }
-        // Moves towards the player
         else {
             face_player((float)time_step);
             glm::vec3 dir = glm::normalize(m_player_target->position() - m_object->position());
@@ -131,7 +115,6 @@ void Priest::on_update(const engine::timestep& time_step)
         // Move away from the player
         else {
             face_player((float)time_step);
-            // Direction is reversed to move away and walk away (animation for walking doesnt reverse since i couldnt find a way to do this)
             glm::vec3 dir = glm::normalize(m_object->position() - m_player_target->position());
             dir.y = 0.0f;
             float current_y = m_object->velocity().y;
@@ -140,7 +123,6 @@ void Priest::on_update(const engine::timestep& time_step)
         break;
 
     case State::Attacking:
-        // Immediate transition to Fleeing if player gets too close during attack
         if (dist < m_flee_radius) {
             m_state = State::Fleeing;
             m_object->animated_mesh()->switch_animation(m_anim_walk);
@@ -148,26 +130,21 @@ void Priest::on_update(const engine::timestep& time_step)
         }
 
         m_attack_cooldown += (float)time_step;
-
-        // Spawns projectile mid-attack animation every 1s
         if (m_attack_cooldown > 1.0f && !m_has_spawned_this_attack) {
             m_spawn_signal = true;
             m_has_spawned_this_attack = true;
         }
 
-        // Return to Chasing after attack plays through
         if (m_attack_cooldown > 3.0f) {
             m_state = State::Chasing;
             m_object->animated_mesh()->switch_animation(m_anim_walk);
         }
         break;
     }
-    // Set a slower playback speed when fleeing to make it look scared
     float playback_speed = (m_state == State::Fleeing) ? 0.8f : 1.0f;
     m_object->animated_mesh()->on_update(time_step * playback_speed);
 }
 
-// Rotates the priest model to always face the player's position
 void Priest::face_player(float dt)
 {
     glm::vec3 dir = m_player_target->position() - m_object->position();

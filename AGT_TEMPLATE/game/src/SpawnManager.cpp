@@ -31,7 +31,7 @@ void SpawnManager::spawn_enemy(const player& player, std::vector<engine::ref<eng
     enemy_props.scale = glm::vec3(0.15f);
     enemy_props.textures = m_berzerker_textures;
     enemy_props.type = 0;
-    enemy_props.mass = 1.0f;
+    enemy_props.mass = 10.0f; // heavy enough that a dashing player (mass 80) doesn't fling them around
     enemy_props.friction = 1.0f;
     enemy_props.restitution = 0.0f;
     enemy_props.bounding_shape = glm::vec3(0.5f, 0.9f, 0.5f);
@@ -88,7 +88,7 @@ void SpawnManager::spawn_priest(const player& player, std::vector<engine::ref<en
     priest_props.scale = glm::vec3(0.15f);
     priest_props.textures = m_priest_textures;
     priest_props.type = 0;
-    priest_props.mass = 1.0f;
+    priest_props.mass = 6.0f; // lighter than a warrior, but still not so light it slides on a bump
     priest_props.friction = 1.0f;
     priest_props.restitution = 0.0f;
     priest_props.bounding_shape = glm::vec3(0.5f, 0.9f, 0.5f);
@@ -172,7 +172,7 @@ SpawnManager::UpdateEvents SpawnManager::update(const engine::timestep& time_ste
         m_priests[i].on_update(time_step);
 
         if (m_priests[i].should_spawn_projectile()) {
-            events.projectile_spawn_requests++;
+            events.firebolt_spawn_positions.push_back(m_priest_objects[i]->position() + glm::vec3(0.f, 1.4f, 0.f));
         }
 
         if (player_ref.is_attacking()) {

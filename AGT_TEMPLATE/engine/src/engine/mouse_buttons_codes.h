@@ -5,6 +5,9 @@ namespace  engine
     /// \brief Mouse button codes from glf3.h
     class mouse_button_codes
     {
+    public:
+        // Was missing (defaults to private for `class`), so these constants were
+        // unusable outside this file - never caught since nothing referenced them yet.
         static constexpr int MOUSE_BUTTON_1         = 0;
         static constexpr int MOUSE_BUTTON_2         = 1;
         static constexpr int MOUSE_BUTTON_3         = 2;

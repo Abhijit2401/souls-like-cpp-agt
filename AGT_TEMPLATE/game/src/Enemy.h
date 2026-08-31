@@ -35,6 +35,11 @@ public:
     // Checks if the enemy has disappeared after the death animation
     bool has_vanished() const { return m_vanished; }
 
+    bool is_telegraphing_attack() const { return m_state == State::Attacking && m_attack_cooldown < m_telegraph_duration; }
+    bool is_striking_attack() const { return m_state == State::Attacking && m_attack_cooldown >= m_telegraph_duration && m_attack_cooldown < m_telegraph_duration + m_strike_duration; }
+    float get_telegraph_progress() const { return m_telegraph_duration > 0.f ? glm::clamp(m_attack_cooldown / m_telegraph_duration, 0.f, 1.f) : 0.f; }
+    float get_strike_progress() const { return m_strike_duration > 0.f ? glm::clamp((m_attack_cooldown - m_telegraph_duration) / m_strike_duration, 0.f, 1.f) : 0.f; }
+    float get_attack_swing_angle() const { return m_attack_swing_angle; }
 private:
     //AI MOVEMENT AND ATTACK
     void chase_player(float dt);
@@ -61,6 +66,10 @@ private:
     uint32_t m_anim_death = 2;
 
     float m_attack_cooldown = 0.0f;
+    float m_telegraph_duration = 2.5f;
+    float m_strike_duration = 0.25f;
+    float m_recovery_duration = 1.0f;
+    float m_attack_swing_angle = 45.0f;
     bool m_damage_dealt = false;
     bool m_damage_signal = false;
     bool m_souls_dropped = false;

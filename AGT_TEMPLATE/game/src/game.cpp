@@ -1,4 +1,3 @@
-// --------- Entry Point ---------------
 #include "example_layer.h"
 #include "engine/core/entry_point.h"
 #include "engine/events/key_event.h"
@@ -25,7 +24,6 @@ public:
         dispatcher.dispatch<engine::key_pressed_event>(BIND_EVENT_FN(sandbox_app::on_key_pressed));
     }
 
-    // Handle application-level key presses (like Escape to exit)
     bool on_key_pressed(engine::key_pressed_event& event)
     {
         if (event.event_type() == engine::event_type_e::key_pressed)

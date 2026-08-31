@@ -566,6 +566,8 @@ IF EXIST ..\engine\external\FMOD\lib\x64\fmod.dll\ (xcopy /Q /E /Y /I ..\engine\
     <ClInclude Include="src\engine\renderer\render_command.h" />
     <ClInclude Include="src\engine\renderer\renderer.h" />
     <ClInclude Include="src\engine\renderer\renderer_api.h" />
+    <ClInclude Include="src\engine\renderer\framebuffer.h" />
+    <ClInclude Include="src\engine\renderer\shadow_map.h" />
     <ClInclude Include="src\engine\renderer\shader.h" />
     <ClInclude Include="src\engine\renderer\skinned_mesh.h" />
     <ClInclude Include="src\engine\renderer\text_manager.h" />
@@ -614,6 +616,8 @@ IF EXIST ..\engine\external\FMOD\lib\x64\fmod.dll\ (xcopy /Q /E /Y /I ..\engine\
     <ClCompile Include="src\engine\renderer\mesh.cpp" />
     <ClCompile Include="src\engine\renderer\model.cpp" />
     <ClCompile Include="src\engine\renderer\render_command.cpp" />
+    <ClCompile Include="src\engine\renderer\framebuffer.cpp" />
+    <ClCompile Include="src\engine\renderer\shadow_map.cpp" />
     <ClCompile Include="src\engine\renderer\renderer.cpp" />
     <ClCompile Include="src\engine\renderer\shader.cpp" />
     <ClCompile Include="src\engine\renderer\skinned_mesh.cpp" />

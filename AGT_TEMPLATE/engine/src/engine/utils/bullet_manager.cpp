@@ -207,6 +207,12 @@ void engine::bullet_manager::add_physical_object(engine::ref<engine::game_object
 		body->setFriction(game_object->friction());
 		if (game_object->lock_angular_factor())
 			body->setAngularFactor(btVector3(0.f, 0.f, 0.f));
+		// Dynamic bodies otherwise have zero damping, so any impulse from a collision (e.g. the
+		// player barrelling through an enemy while rolling) never decays and the body just keeps
+		// sliding indefinitely until something else overwrites its velocity. A little damping lets
+		// bumps settle out instead of leaving things skating across the ground.
+		if (mass != 0.f)
+			body->setDamping(0.4f, 0.8f);
 		//body->setRestitution(game_object->restitution());
 		physical_object* object = new physical_object(body);
 		physical_objects.push_back(object);

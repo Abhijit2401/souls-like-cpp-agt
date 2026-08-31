@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "Boss.h"
+#include <cstdlib>
 
 Boss::Boss() {}
 Boss::~Boss() {}
@@ -101,6 +102,21 @@ void Boss::on_update(const engine::timestep& time_step)
             m_attack_cooldown = 0.0f;
             m_damage_dealt = false;
             m_damage_signal = false;
+            float speed_variance = 0.8f + ((float)rand() / (float)RAND_MAX) * 0.5f;
+            m_current_attack_type = (rand() % 100 < 30) ? AttackType::AOE : AttackType::Melee;
+            if (m_current_attack_type == AttackType::AOE)
+            {
+                m_telegraph_duration = 2.0f * speed_variance;
+                m_strike_duration = 0.35f;
+                m_recovery_duration = 1.6f * speed_variance;
+            }
+            else
+            {
+                m_telegraph_duration = 1.3f * speed_variance;
+                m_strike_duration = 0.3f;
+                m_recovery_duration = 1.4f * speed_variance;
+                m_attack_swing_angle = -80.0f + ((float)rand() / (float)RAND_MAX) * 160.0f;
+            }
         }
         else {
             chase_player((float)time_step); //continues chasing
@@ -117,40 +133,56 @@ void Boss::on_update(const engine::timestep& time_step)
     m_object->animated_mesh()->on_update(time_step * anim_speed);
 }
 
-//Handles movement toward the player
 void Boss::chase_player(float dt)
 {
-    glm::vec3 dir = m_player_target->position() - m_object->position();
-    dir.y = 0.0f; //Flattens movement to ground plane
-    if (glm::length(dir) > 0.01f) dir = glm::normalize(dir);
+    glm::vec3 to_player = m_player_target->position() - m_object->position();
+    to_player.y = 0.0f;
+    float dist = glm::length(to_player);
+    glm::vec3 dir_to_player = (dist > 0.01f) ? (to_player / dist) : glm::vec3(0.f, 0.f, 1.f);
 
-    m_object->set_forward(dir);
-    float current_y = m_object->velocity().y;
-    m_object->set_velocity(glm::vec3(dir.x * m_speed, current_y, dir.z * m_speed));
-
-    // Calculate to face the player as done with the others
+    m_object->set_forward(dir_to_player);
     float theta = atan2(m_object->forward().x, m_object->forward().z);
     m_object->set_rotation_amount(theta);
+
+    m_circle_switch_timer -= dt;
+    if (m_circle_switch_timer <= 0.0f)
+    {
+        m_circle_switch_timer = 3.0f + ((float)rand() / (float)RAND_MAX) * 3.0f; // 3-6s
+        m_circle_direction = (rand() % 2 == 0) ? 1 : -1;
+    }
+
+    glm::vec3 move_dir = dir_to_player;
+    const float circle_band_inner = m_attack_range * 1.1f;
+    const float circle_band_outer = m_attack_range * 3.0f;
+    if (dist > circle_band_inner && dist < circle_band_outer)
+    {
+        glm::vec3 tangent = glm::cross(glm::vec3(0.f, 1.f, 0.f), dir_to_player) * (float)m_circle_direction;
+        float close_in_weight = glm::clamp((circle_band_outer - dist) / (circle_band_outer - circle_band_inner), 0.0f, 1.0f);
+        move_dir = glm::normalize(glm::mix(tangent, dir_to_player, close_in_weight * 0.6f + 0.2f));
+    }
+    float current_y = m_object->velocity().y;
+    m_object->set_velocity(glm::vec3(move_dir.x * m_speed, current_y, move_dir.z * m_speed));
 }
 
-//Attack sequence, damage dealt and cooldowns
 void Boss::attack_player(float dt)
 {
     m_attack_cooldown += dt;
-
-    //Checks for damage window in the middle of the animation
-    if (m_attack_cooldown > 1.0f && m_attack_cooldown < 1.5f && !m_damage_dealt)
+    if (is_striking_attack() && !m_damage_dealt)
     {
         glm::vec3 to_player = m_player_target->position() - m_object->position();
-        //Slightly larger hit check for the big boss
-        if (glm::length(to_player) <= m_attack_range + 1.0f)
+        float dist_to_player = glm::length(to_player);
+        bool in_range = (m_current_attack_type == AttackType::AOE)
+            ? dist_to_player <= m_aoe_radius
+            : dist_to_player <= m_attack_range + 1.0f;
+
+        if (in_range)
         {
             m_damage_dealt = true;
-            m_damage_signal = true; // Signals to example_layer that damage should be applied
+            m_damage_signal = true;
         }
     }
 
-    if (m_attack_cooldown >= 3.0f) //Longer recovery time for boss
+    if (m_attack_cooldown >= m_telegraph_duration + m_strike_duration + m_recovery_duration) //Longer recovery time for boss
     {
         m_state = State::Chasing;
         m_object->animated_mesh()->switch_animation(m_anim_walk);

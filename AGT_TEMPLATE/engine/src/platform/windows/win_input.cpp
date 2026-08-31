@@ -35,14 +35,31 @@ std::pair<float, float> engine::win_input::mouse_position_impl() const
 	float x = static_cast<float>(x_pos);
 	float y = static_cast<float>(y_pos);
 
+    bool cursor_hidden = !our_window.is_cursor_visible();
+
     if(s_first_mouse)
     {
         s_last_position.first  = x;
         s_last_position.second = y;
         s_first_mouse = false;
+        s_was_cursor_hidden = cursor_hidden;
     }
-   
-    if(!our_window.is_cursor_visible())
+
+    // The cursor is free to move (visible) while a menu is open, so the first
+    // frame back in mouse-look mode must resync s_last_position instead of
+    // diffing against a now-stale position - otherwise the camera snaps by
+    // however far the real mouse moved while the menu was open (e.g. straight
+    // to a top-down view on resuming from pause).
+    if(cursor_hidden && !s_was_cursor_hidden)
+    {
+        s_last_position.first  = x;
+        s_last_position.second = y;
+        s_was_cursor_hidden = cursor_hidden;
+        return { 0.f, 0.f };
+    }
+    s_was_cursor_hidden = cursor_hidden;
+
+    if(cursor_hidden)
     {
         float delta_x = x - s_last_position.first;
         float delta_y = s_last_position.second - y; // reversed since y-coordinates range from bottom to top

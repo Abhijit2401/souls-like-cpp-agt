@@ -4,11 +4,9 @@
 
 namespace engine
 {
-	// NOTE: The geometry created here is an octahedron (two pyramids base-to-base), which has 8 faces.
 	SoulFragment::SoulFragment(std::vector<glm::vec3> vertices) : m_vertices(vertices)
 	{
-		// An octahedron has 8 triangle faces
-		// We need 8 normals, one for each face
+
 		std::vector<glm::vec3> normals;
 
 		// top tetrahedron faces 

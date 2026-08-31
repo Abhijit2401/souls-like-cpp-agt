@@ -10,6 +10,7 @@
 
 #include "engine/core/input.h"
 #include "engine/key_codes.h"
+#include "engine/mouse_buttons_codes.h"
 
 // ---renderer------------------------
 #include "engine/renderer/renderer.h"
@@ -24,6 +25,8 @@
 #include "engine/renderer/light.h"
 #include "engine/renderer/material.h"
 #include "engine/renderer/text_manager.h"
+#include "engine/renderer/framebuffer.h"
+#include "engine/renderer/shadow_map.h"
 #include "engine/renderer/skinned_mesh.h"
 
 // ---entities------------------------
