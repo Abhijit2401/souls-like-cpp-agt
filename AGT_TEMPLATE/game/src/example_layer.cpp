@@ -10,6 +10,7 @@
 #include "engine/events/key_event.h"
 #include "engine/utils/track.h"
 #include <string> 
+#include <algorithm>
 #include <sstream>
 #include <iomanip>
 #include "btBulletDynamicsCommon.h"
@@ -33,7 +34,6 @@ example_layer::example_layer()
     m_audio_manager->load_sound("assets/audio/Soliloquy.mp3", engine::sound_type::track, "music");
     m_audio_manager->load_sound("assets/audio/key_pickup.wav", engine::sound_type::spatialised, "pickup");
     m_audio_manager->load_sound("assets/audio/sword-arm-2a.wav", engine::sound_type::spatialised, "attack");
-    m_audio_manager->load_sound("assets/audio/bounce.wav", engine::sound_type::spatialised, "bounce");
     m_audio_manager->load_sound("assets/audio/fall.wav", engine::sound_type::spatialised, "dash");
     //Enough sound effects for the mark scheme
     m_audio_manager->play("music");
@@ -66,26 +66,7 @@ example_layer::example_layer()
     m_halberdLight.Attenuation.Linear = 0.1f;
     m_halberdLight.Attenuation.Exp = 0.01f;
 
-    //Yellow lgihts spawned arround the trees 
-    for (int i = 0; i < 4; i++) {
-        engine::PointLight p;
-        p.Color = glm::vec3(1.0f, 0.8f, 0.2f);
-        p.AmbientIntensity = 0.0f;
-        p.DiffuseIntensity = 25.0f;
-
-        int idx = rand() % 67; //randomised 
-        glm::vec3 tPos = glm::vec3(0.f, 0.0f, 0.f);
-        p.Position = tPos + glm::vec3(0.f, 4.0f, 0.f); //higher up so its near the leaves
-        p.Attenuation.Constant = 1.0f;
-        p.Attenuation.Linear = 0.01f; //faster fall off for hte lights instead of a gradient
-        p.Attenuation.Exp = 0.01f;
-
-        m_tree_lights.push_back(p);
-    }
-    // Update the total count of point lights for the shader
-    num_point_lights = 2 + m_tree_lights.size();
-
-    //Submits initial lights data to the shader
+    //Submits initial lights data to the shader (the shader only supports 2 point lights so its the spawn light and the halberd light)
     std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->bind();
     std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("lighting_on", true);
     std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("gColorMap", 0);
@@ -94,10 +75,6 @@ example_layer::example_layer()
     std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("gNumPointLights", (int)num_point_lights);
     m_pointLight.submit(mesh_shader, 0);
     m_halberdLight.submit(mesh_shader, 1);
-
-    for (size_t i = 0; i < m_tree_lights.size(); i++) {
-        m_tree_lights[i].submit(mesh_shader, 2 + i);
-    }
 
     //More shader setup 
     std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("gMatSpecularIntensity", 1.f);
@@ -151,6 +128,8 @@ example_layer::example_layer()
     //GRASS (Static mesh to add detail to terrain) from https://opengameart.org/content/3d-grass-patch
     m_grass_model = engine::model::create("assets/models/static/high_grass.fbx");
     m_grass_texture = engine::texture_2d::create("assets/textures/grass.png", false);
+    m_grass_material = engine::material::create(1.0f, glm::vec3(0.1f, 0.5f, 0.1f),
+        glm::vec3(0.1f, 0.5f, 0.1f), glm::vec3(0.2f, 0.2f, 0.2f), 1.0f);
 
     //Grass setup showing how many grass patches to add and size
     float map_limit = 40.0f;
@@ -349,7 +328,7 @@ example_layer::example_layer()
     m_soul_pickups.push_back({ glm::vec3(2.f, 1.0f, 3.f) });
 
     //INTRO SETUP
-    m_intro_texture = engine::texture_2d::create("assets/textures/Rock1.jpg", true);
+    m_intro_texture = engine::texture_2d::create("assets/textures/skybox/stormydays_ft.tga", true);
     std::vector<engine::mesh::vertex> quad_vertices
     {
         { {-1.6f, -0.9f, -0.1f}, {0.f, 0.f, 1.f}, {0.f, 0.f} },
@@ -434,18 +413,12 @@ example_layer::example_layer()
     for (const auto& rock : m_rocks) m_game_objects.push_back(rock);
 
     m_physics_manager = engine::bullet_manager::create(m_game_objects);
-    //Sets up damping for the halberd projectile after its physical body is made
-    if (m_physics_manager->physical_objects.size() > 2) {
-        if (m_physics_manager->physical_objects.size() > 3) {
-            btRigidBody* halberd_body = m_physics_manager->physical_objects.at(3)->get_body();
-            if (halberd_body) halberd_body->setDamping(0.5f, 0.8f);
-        }
-    }
 
     m_text_manager = engine::text_manager::create();
     m_hud.initialise(m_text_manager);
     m_player.update_camera(m_3d_camera, engine::timestep(0.f));
     m_dim_overlay_material = engine::material::create(1.0f, glm::vec3(0.04f), glm::vec3(0.f), glm::vec3(0.f), 0.55f);
+    m_hurt_overlay_material = engine::material::create(1.0f, glm::vec3(0.85f, 0.05f, 0.05f), glm::vec3(0.f), glm::vec3(0.f), 0.0f);
 }
 
 example_layer::~example_layer() {}
@@ -456,6 +429,15 @@ void example_layer::on_update(const engine::timestep& time_step)
 
     if (m_game_state == GameState::InGame)
     {
+        //Hit stop, freezes the game for a split second when the sword hits so it feels heavier
+        if (m_hit_stop_timer > 0.0f)
+        {
+            m_hit_stop_timer -= (float)time_step;
+            return;
+        }
+        if (m_hurt_flash_timer > 0.0f) m_hurt_flash_timer = glm::max(0.0f, m_hurt_flash_timer - (float)time_step);
+        m_combat_vfx.on_update((float)time_step);
+
         m_physics_manager->dynamics_world_update(m_game_objects, double(time_step));
 
         bool middle_mouse_down = engine::input::mouse_button_pressed(engine::mouse_button_codes::MOUSE_BUTTON_MIDDLE);
@@ -466,33 +448,47 @@ void example_layer::on_update(const engine::timestep& time_step)
 
         //AUDIO SETUP FOR ROLLING/DASHING AND ATTACKING
         //Attacking audio
-        static bool was_attacking = false;
         bool is_attacking = m_player.is_attacking();
-        if (is_attacking && !was_attacking) {
-
+        if (is_attacking && !m_was_attacking) {
             m_audio_manager->play_spatialised_sound("attack", m_3d_camera.position(), m_player.object()->position());
         }
-        was_attacking = is_attacking;
+        m_was_attacking = is_attacking;
         //Rolling/Dashing audio
-        static bool was_rolling = false;
         bool is_rolling = m_player.is_rolling();
-        if (is_rolling && !was_rolling) {
+        if (is_rolling && !m_was_rolling) {
             m_audio_manager->play_spatialised_sound("dash", m_3d_camera.position(), m_player.object()->position());
         }
-        was_rolling = is_rolling;
+        m_was_rolling = is_rolling;
 
         //UPDATES BOSS FSM LOGIC
         m_boss_logic.on_update(time_step);
-        if (m_player.is_attacking()) {
-            float dist = glm::distance(m_player.object()->position(), m_boss_object->position());
-            if (dist < 5.0f) {
-                glm::vec3 to_boss = glm::normalize(m_boss_object->position() - m_player.object()->position());
-                if (glm::dot(m_player.object()->forward(), to_boss) > 0.5f) {
-                    m_boss_logic.take_damage(m_player.get_damage() * (float)time_step);
-                }
+        if (m_boss_logic.check_hit_player()) m_player.take_damage(25.0f);
+
+        //PLAYER SWORD HIT (one hit per swing to everything inside the attack area when the sword connects)
+        if (m_player.consume_attack_hit())
+        {
+            const AttackArc swing = m_player.get_attack_arc();
+            std::vector<glm::vec3> hit_positions = m_spawn_manager.apply_player_hit(swing, m_player.get_damage());
+            const float boss_half_height = 1.2f;
+            if (!m_boss_logic.is_dead() && swing.contains(m_boss_object->position(), 1.0f, boss_half_height))
+            {
+                m_boss_logic.take_damage(m_player.get_damage());
+                hit_positions.push_back(m_boss_object->position() + glm::vec3(0.f, boss_half_height, 0.f));
+            }
+
+            //Gold sparks and a flash on everything that got hit plus camera shake and hit stop
+            for (const auto& hit_position : hit_positions)
+            {
+                //Moves the effect a bit towards the player so it shows on the side that got hit
+                glm::vec3 towards_player = glm::normalize(m_player.object()->position() + glm::vec3(0.f, 0.8f, 0.f) - hit_position);
+                m_combat_vfx.spawn_hit_burst(hit_position + towards_player * 0.35f, glm::vec3(1.0f, 0.75f, 0.25f), 22, 6.0f, 0.9f);
+            }
+            if (!hit_positions.empty())
+            {
+                m_player.trigger_camera_shake(0.15f, 0.12f);
+                m_hit_stop_timer = 0.06f;
             }
         }
-        if (m_boss_logic.check_hit_player()) m_player.take_damage(25.0f);
 
         //UPDATES ENEMY HORDE AND PRIEST AI, HIT DETECTION, RESPAWN, AND SOUL DROPS
         SpawnManager::UpdateEvents spawn_events = m_spawn_manager.update(time_step, m_player);
@@ -520,6 +516,9 @@ void example_layer::on_update(const engine::timestep& time_step)
                 if (dmg > 0.0f) m_player.take_damage(dmg);
             }
         }
+        //Removes expired firebolts so the list doesn't grow forever
+        m_firebolts.erase(std::remove_if(m_firebolts.begin(), m_firebolts.end(),
+            [](const Firebolt& bolt) { return !bolt.is_active(); }), m_firebolts.end());
 
         //Soul pickups 
         glm::vec3 current_player_position = m_player.object()->position();
@@ -536,11 +535,24 @@ void example_layer::on_update(const engine::timestep& time_step)
                 }
             }
         }
+        //Removes collected souls so the list doesn't grow forever
+        m_soul_pickups.erase(std::remove_if(m_soul_pickups.begin(), m_soul_pickups.end(),
+            [](const SoulFragmentPickup& soul) { return !soul.is_active; }), m_soul_pickups.end());
 
         m_audio_manager->update_with_camera(m_3d_camera);
-        check_bounce();
-        if (m_player.is_dead())
+
+        //If the player lost health this frame then flash the screen red and spawn red sparks
+        if (m_player.get_health() < m_last_player_health - 0.01f)
         {
+            m_hurt_flash_timer = m_hurt_flash_duration;
+            m_combat_vfx.spawn_hit_burst(m_player.object()->position() + glm::vec3(0.f, 0.7f, 0.f), glm::vec3(0.9f, 0.08f, 0.05f), 16, 4.5f, 0.6f);
+        }
+        m_last_player_health = m_player.get_health();
+
+        //Waits for the death animation to finish before showing the defeat screen
+        if (m_player.is_death_sequence_finished())
+        {
+            m_hurt_flash_timer = 0.0f;
             m_game_state = GameState::Defeat;
             m_defeat_selection = 0;
             engine::application::window().show_mouse_cursor();
@@ -577,7 +589,7 @@ void example_layer::render_shadow_casters(const engine::ref<engine::shader>& sha
         engine::renderer::submit(shader, boss_transform, m_boss_object);
     }
 
-    engine::renderer::submit(shader, m_player.object());
+    engine::renderer::submit(shader, m_player.render_transform(), m_player.object());
 }
 
 void example_layer::render_static_world(const engine::ref<engine::shader>& mesh_shader, const glm::vec3& camera_pos)
@@ -596,13 +608,7 @@ void example_layer::render_static_world(const engine::ref<engine::shader>& mesh_
         std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", true);
 
         m_grass_texture->bind();
-
-        engine::ref<engine::material> green_material = engine::material::create(
-            1.0f, glm::vec3(0.1f, 0.5f, 0.1f),
-            glm::vec3(0.1f, 0.5f, 0.1f),
-            glm::vec3(0.2f, 0.2f, 0.2f), 1.0f
-        );
-        green_material->submit(mesh_shader);
+        m_grass_material->submit(mesh_shader);
 
         for (const auto& transform : m_grass_transforms) {
             for (const auto& mesh : m_grass_model->meshes()) {
@@ -654,10 +660,13 @@ void example_layer::on_render()
 
     if (m_game_state == GameState::MainMenu)
     {
-        const auto text_shader = engine::renderer::shaders_library()->get("text_2D");
-        engine::renderer::begin_scene(m_2d_camera, text_shader);
-        m_hud.render_main_menu(text_shader, m_intro_texture, m_quad_mesh, m_menu_selection, m_player.get_mouse_sensitivity(), m_music_volume);
+        const auto mesh_shader = engine::renderer::shaders_library()->get("mesh");
+        engine::renderer::begin_scene(m_2d_camera, mesh_shader);
+        m_hud.render_menu_background(mesh_shader, m_intro_texture, m_quad_mesh, m_dim_overlay_material);
         engine::renderer::end_scene();
+
+        const auto text_shader = engine::renderer::shaders_library()->get("text_2D");
+        m_hud.render_main_menu(text_shader, m_menu_selection, m_player.get_mouse_sensitivity(), m_music_volume, m_run_started);
     }
     else if (m_game_state == GameState::InGame || m_game_state == GameState::PauseMenu || m_game_state == GameState::Defeat)
     {
@@ -706,11 +715,9 @@ void example_layer::on_render()
         glm::mat4 halberd_transform(1.0f);
         m_halberd->transform(halberd_transform);
         for (const auto& mesh : m_halberd->meshes()) engine::renderer::submit(mesh_shader, mesh, halberd_transform);
-        std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("gNumPointLights", 1);
-        m_pointLight.submit(mesh_shader, 0);
         std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", false);
 
-        engine::renderer::submit(mesh_shader, m_player.object());
+        engine::renderer::submit(mesh_shader, m_player.render_transform(), m_player.object());
 
         m_combat_vfx.render(mesh_shader, camera_pos, m_player, m_spawn_manager, m_boss_logic, m_boss_object, m_firebolts);
         m_lock_on.render_reticle(mesh_shader, camera_pos);
@@ -721,6 +728,14 @@ void example_layer::on_render()
         std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("lighting_on", false);
         std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader)->set_uniform("has_texture", false);
         engine::render_command::disable_depth_test();
+
+        //Red screen tint when hit that fades out quickly
+        if (m_hurt_flash_timer > 0.0f)
+        {
+            m_hurt_overlay_material->set_transparency(0.14f * (m_hurt_flash_timer / m_hurt_flash_duration));
+            m_hurt_overlay_material->submit(mesh_shader);
+            engine::renderer::submit(mesh_shader, m_quad_mesh, glm::mat4(1.0f));
+        }
 
         m_hud.render_player_bars(mesh_shader, m_player);
         if (!m_boss_logic.is_dead())
@@ -765,147 +780,137 @@ void example_layer::on_render()
             engine::renderer::end_scene();
 
             if (m_game_state == GameState::PauseMenu)
-                m_hud.render_pause_menu(text_shader, m_player, m_soul_count, m_pause_selection, m_music_volume);
+                m_hud.render_pause_menu(text_shader, m_player, m_soul_count, m_pause_selection, m_music_volume, m_pause_message);
             else
                 m_hud.render_defeat_screen(text_shader, m_defeat_selection);
         }
     }
 }
 
+void example_layer::start_game()
+{
+    m_run_started = true;
+    m_game_state = GameState::InGame;
+    engine::application::window().hide_mouse_cursor();
+}
+
+void example_layer::open_pause_menu()
+{
+    m_game_state = GameState::PauseMenu;
+    m_pause_selection = Hud::PauseResume;
+    m_pause_message.clear();
+    engine::application::window().show_mouse_cursor();
+}
+
+void example_layer::open_main_menu()
+{
+    m_game_state = GameState::MainMenu;
+    m_menu_selection = Hud::MainStart;
+    engine::application::window().show_mouse_cursor();
+}
+
+void example_layer::adjust_setting(bool sensitivity, int direction)
+{
+    if (sensitivity)
+    {
+        m_player.set_mouse_sensitivity(m_player.get_mouse_sensitivity() + 0.05f * direction);
+    }
+    else
+    {
+        m_music_volume = glm::clamp(m_music_volume + 0.05f * direction, 0.0f, 1.0f);
+        m_audio_manager->volume("music", m_music_volume);
+    }
+}
+
+bool example_layer::try_spend_souls(int cost)
+{
+    if (m_soul_count < cost)
+    {
+        m_pause_message = "Not enough souls (need " + std::to_string(cost) + ")";
+        return false;
+    }
+    m_soul_count -= cost;
+    return true;
+}
+
 void example_layer::on_event(engine::event& event)
 {
-    if (event.event_type() == engine::event_type_e::key_pressed)
+    if (event.event_type() != engine::event_type_e::key_pressed) return;
+
+    auto& e = dynamic_cast<engine::key_pressed_event&>(event);
+    const int key = e.key_code();
+
+    //Menu controls (W/S or arrows to move, A/D or arrows to change values, Space/Enter to select)
+    const bool up = key == engine::key_codes::KEY_W || key == engine::key_codes::KEY_UP;
+    const bool down = key == engine::key_codes::KEY_S || key == engine::key_codes::KEY_DOWN;
+    const bool left = key == engine::key_codes::KEY_A || key == engine::key_codes::KEY_LEFT;
+    const bool right = key == engine::key_codes::KEY_D || key == engine::key_codes::KEY_RIGHT;
+    const bool select = key == engine::key_codes::KEY_SPACE || key == engine::key_codes::KEY_ENTER || key == engine::key_codes::KEY_KP_ENTER;
+    const bool pause_key = key == engine::key_codes::KEY_ESCAPE || key == engine::key_codes::KEY_E;
+    auto navigate = [&](int& selection, int count)
     {
-        auto& e = dynamic_cast<engine::key_pressed_event&>(event);
-        const GameState state_at_event = m_game_state;
+        if (up) selection = (selection + count - 1) % count;
+        if (down) selection = (selection + 1) % count;
+    };
 
-        if (e.key_code() == engine::key_codes::KEY_E)
-        {
-            if (state_at_event == GameState::InGame) {
-                m_game_state = GameState::PauseMenu;
-                m_pause_selection = 0;
-                engine::application::window().show_mouse_cursor();
-            }
-            else if (state_at_event == GameState::PauseMenu) {
-                m_game_state = GameState::InGame;
-                engine::application::window().hide_mouse_cursor();
-            }
-        }
-
-        if (state_at_event == GameState::InGame)
-        {
-            if (e.key_code() == engine::key_codes::KEY_P)
-            {
-                m_spawn_manager.spawn_enemy(m_player, m_game_objects);
-            }
-            if (e.key_code() == engine::key_codes::KEY_R)
-            {
-                m_player.use_potion();
-            }
-        }
-
-        if (state_at_event == GameState::PauseMenu)
-        {
-            if (e.key_code() == engine::key_codes::KEY_W) { if (m_pause_selection > 0) m_pause_selection--; }
-            if (e.key_code() == engine::key_codes::KEY_S) { if (m_pause_selection < 6) m_pause_selection++; }
-
-            if (e.key_code() == engine::key_codes::KEY_SPACE)
-            {
-                if (m_pause_selection == 0) { if (m_soul_count >= 5) { m_soul_count -= 5; m_player.increase_damage(10.0f); } }
-                else if (m_pause_selection == 1) { if (m_soul_count >= 5) { m_soul_count -= 5; m_player.increase_speed(2.0f); } }
-                else if (m_pause_selection == 2) { if (m_soul_count >= 10) { m_soul_count -= 10; m_player.add_potion(1); } }
-                else if (m_pause_selection == 5)
-                {
-                    m_game_state = GameState::MainMenu;
-                    engine::application::window().show_mouse_cursor();
-                }
-                else if (m_pause_selection == 6)
-                {
-                    engine::application::exit();
-                }
-            }
-
-            if (m_pause_selection == 3)
-            {
-                if (e.key_code() == engine::key_codes::KEY_A) { float s = m_player.get_mouse_sensitivity(); m_player.set_mouse_sensitivity(glm::max(s - 0.05f, 0.05f)); }
-                if (e.key_code() == engine::key_codes::KEY_D) { float s = m_player.get_mouse_sensitivity(); m_player.set_mouse_sensitivity(s + 0.05f); }
-            }
-            else if (m_pause_selection == 4) // Volume
-            {
-                if (e.key_code() == engine::key_codes::KEY_A) { m_music_volume = glm::max(m_music_volume - 0.05f, 0.0f); m_audio_manager->volume("music", m_music_volume); }
-                if (e.key_code() == engine::key_codes::KEY_D) { m_music_volume = glm::min(m_music_volume + 0.05f, 1.0f); m_audio_manager->volume("music", m_music_volume); }
-            }
-        }
-        if (state_at_event == GameState::Defeat)
-        {
-            if (e.key_code() == engine::key_codes::KEY_W) { if (m_defeat_selection > 0) m_defeat_selection--; }
-            if (e.key_code() == engine::key_codes::KEY_S) { if (m_defeat_selection < 2) m_defeat_selection++; }
-
-            if (e.key_code() == engine::key_codes::KEY_SPACE)
-            {
-                if (m_defeat_selection == 0) // Respawn
-                {
-                    m_player.respawn();
-                    m_game_state = GameState::InGame;
-                    engine::application::window().hide_mouse_cursor();
-                }
-                else if (m_defeat_selection == 1) // Return to Main Menu
-                {
-                    m_player.respawn();
-                    m_game_state = GameState::MainMenu;
-                    engine::application::window().show_mouse_cursor();
-                }
-                else if (m_defeat_selection == 2) // Quit Game
-                {
-                    engine::application::exit();
-                }
-            }
-        }
-
-        if (state_at_event == GameState::MainMenu)
-        {
-            if (e.key_code() == engine::key_codes::KEY_SPACE)
-            {
-                if (m_menu_selection == 0)
-                {
-                    m_game_state = GameState::InGame;
-                    engine::application::window().hide_mouse_cursor();
-                }
-            }
-            if (e.key_code() == engine::key_codes::KEY_W) { if (m_menu_selection > 0) m_menu_selection--; }
-            if (e.key_code() == engine::key_codes::KEY_S) { if (m_menu_selection < 2) m_menu_selection++; }
-
-            if (m_menu_selection == 1)
-            {
-                if (e.key_code() == engine::key_codes::KEY_A) { float s = m_player.get_mouse_sensitivity(); m_player.set_mouse_sensitivity(glm::max(s - 0.05f, 0.05f)); }
-                if (e.key_code() == engine::key_codes::KEY_D) { float s = m_player.get_mouse_sensitivity(); m_player.set_mouse_sensitivity(s + 0.05f); }
-            }
-
-            else if (m_menu_selection == 2)
-            {
-                if (e.key_code() == engine::key_codes::KEY_A) { m_music_volume = glm::max(m_music_volume - 0.05f, 0.0f); m_audio_manager->volume("music", m_music_volume); }
-                if (e.key_code() == engine::key_codes::KEY_D) { m_music_volume = glm::min(m_music_volume + 0.05f, 1.0f); m_audio_manager->volume("music", m_music_volume); }
-            }
-        }
-        if (e.key_code() == engine::key_codes::KEY_F1)
-        {
-            engine::render_command::toggle_wireframe();
-        }
-        if (e.key_code() == engine::key_codes::KEY_F2)
-        {
-            m_player.toggle_invincible();
-        }
-    }
-}
-//from tutorial i dont use the check_bounce bounce sound effect anymore
-void example_layer::check_bounce()
-{
-    if (!m_halberd) return;
-    float current_vel = m_halberd->velocity().y;
-    if (m_prev_halberd_y_vel < -1.0f && current_vel >= 0.0f)
+    switch (m_game_state)
     {
-        m_audio_manager->play_spatialised_sound("bounce", m_3d_camera.position(), m_halberd->position());
-    }
-    m_prev_halberd_y_vel = current_vel;
-}
+    case GameState::MainMenu:
+        navigate(m_menu_selection, Hud::MainMenuItemCount);
+        if (m_menu_selection == Hud::MainSensitivity && (left || right)) adjust_setting(true, right ? 1 : -1);
+        if (m_menu_selection == Hud::MainVolume && (left || right)) adjust_setting(false, right ? 1 : -1);
+        if (select)
+        {
+            if (m_menu_selection == Hud::MainStart) start_game();
+            else if (m_menu_selection == Hud::MainQuit) engine::application::exit();
+        }
+        break;
 
+    case GameState::InGame:
+        if (pause_key) open_pause_menu();
+        if (key == engine::key_codes::KEY_P) m_spawn_manager.spawn_enemy(m_player, m_game_objects);
+        if (key == engine::key_codes::KEY_R) m_player.use_potion();
+        break;
+
+    case GameState::PauseMenu:
+        if (pause_key) { start_game(); break; }
+        if (up || down) m_pause_message.clear();
+        navigate(m_pause_selection, Hud::PauseMenuItemCount);
+        if (m_pause_selection == Hud::PauseSensitivity && (left || right)) adjust_setting(true, right ? 1 : -1);
+        if (m_pause_selection == Hud::PauseVolume && (left || right)) adjust_setting(false, right ? 1 : -1);
+        if (select)
+        {
+            switch (m_pause_selection)
+            {
+            case Hud::PauseResume: start_game(); break;
+            case Hud::PauseDamage:
+                if (try_spend_souls(Hud::k_damage_upgrade_cost)) { m_player.increase_damage(10.0f); m_pause_message = "Damage increased!"; }
+                break;
+            case Hud::PauseSpeed:
+                if (try_spend_souls(Hud::k_speed_upgrade_cost)) { m_player.increase_speed(2.0f); m_pause_message = "Move speed increased!"; }
+                break;
+            case Hud::PausePotion:
+                if (try_spend_souls(Hud::k_potion_cost)) { m_player.add_potion(1); m_pause_message = "Bought a health potion!"; }
+                break;
+            case Hud::PauseMainMenu: open_main_menu(); break;
+            case Hud::PauseQuit: engine::application::exit(); break;
+            default: break;
+            }
+        }
+        break;
+
+    case GameState::Defeat:
+        navigate(m_defeat_selection, Hud::DefeatMenuItemCount);
+        if (select)
+        {
+            if (m_defeat_selection == Hud::DefeatRespawn) { m_player.respawn(); start_game(); }
+            else if (m_defeat_selection == Hud::DefeatMainMenu) { m_player.respawn(); open_main_menu(); }
+            else if (m_defeat_selection == Hud::DefeatQuit) engine::application::exit();
+        }
+        break;
+    }
+
+    //Debug keys work in any state
+    if (key == engine::key_codes::KEY_F1) engine::render_command::toggle_wireframe();
+    if (key == engine::key_codes::KEY_F2) m_player.toggle_invincible();
+}

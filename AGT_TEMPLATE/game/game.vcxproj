@@ -133,6 +133,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="src\AttackArc.h" />
     <ClInclude Include="src\Boss.h" />
     <ClInclude Include="src\CombatVfx.h" />
     <ClInclude Include="src\Enemy.h" />

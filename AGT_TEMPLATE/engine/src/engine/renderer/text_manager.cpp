@@ -80,6 +80,17 @@ void engine::text_manager::init()
 	
 }
 
+float engine::text_manager::text_width(const std::string& text, float scale) const
+{
+	float width = 0.0f;
+	for (char c : text)
+	{
+		auto it = characters.find(c);
+		if (it != characters.end()) width += (it->second.advance >> 6) * scale;
+	}
+	return width;
+}
+
 void engine::text_manager::render_text(const engine::ref<engine::shader> s, std::string text, float x, float y, float scale, glm::vec4 colour)
 {
 	// Activate corresponding render state

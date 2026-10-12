@@ -120,18 +120,6 @@ SpawnManager::UpdateEvents SpawnManager::update(const engine::timestep& time_ste
     {
         m_enemies[i].on_update(time_step);
 
-        if (player_ref.is_attacking()) {
-            float dist = glm::distance(player_ref.object()->position(), m_warriors[i]->position());
-            if (dist < 3.0f) {
-                glm::vec3 to_enemy = glm::normalize(m_warriors[i]->position() - player_ref.object()->position());
-                if (glm::dot(player_ref.object()->forward(), to_enemy) > 0.5f) {
-                    if (!m_enemies[i].is_dead()) {
-                        m_enemies[i].take_damage(player_ref.get_damage() * (float)time_step);
-                    }
-                }
-            }
-        }
-
         if (m_enemies[i].check_hit_player()) {
             player_ref.take_damage(10.0f);
         }
@@ -175,16 +163,6 @@ SpawnManager::UpdateEvents SpawnManager::update(const engine::timestep& time_ste
             events.firebolt_spawn_positions.push_back(m_priest_objects[i]->position() + glm::vec3(0.f, 1.4f, 0.f));
         }
 
-        if (player_ref.is_attacking()) {
-            float dist = glm::distance(player_ref.object()->position(), m_priest_objects[i]->position());
-            if (dist < 3.0f) {
-                glm::vec3 to_enemy = glm::normalize(m_priest_objects[i]->position() - player_ref.object()->position());
-                if (glm::dot(player_ref.object()->forward(), to_enemy) > 0.5f) {
-                    m_priests[i].take_damage(player_ref.get_damage() * (float)time_step);
-                }
-            }
-        }
-
         if (m_priests[i].is_dead() && !m_priests[i].souls_dropped())
         {
             int num_souls = (rand() % 6) + 3;
@@ -199,6 +177,30 @@ SpawnManager::UpdateEvents SpawnManager::update(const engine::timestep& time_ste
     }
 
     return events;
+}
+
+std::vector<glm::vec3> SpawnManager::apply_player_hit(const AttackArc& arc, float damage)
+{
+    const float body_radius = 0.5f;
+    const float body_half_height = 0.75f;
+    std::vector<glm::vec3> hit_positions;
+    for (size_t i = 0; i < m_enemies.size(); i++)
+    {
+        if (!m_enemies[i].is_dead() && arc.contains(m_warriors[i]->position(), body_radius, body_half_height))
+        {
+            m_enemies[i].take_damage(damage);
+            hit_positions.push_back(m_warriors[i]->position() + glm::vec3(0.f, body_half_height, 0.f));
+        }
+    }
+    for (size_t i = 0; i < m_priests.size(); i++)
+    {
+        if (!m_priests[i].is_dead() && arc.contains(m_priest_objects[i]->position(), body_radius, body_half_height))
+        {
+            m_priests[i].take_damage(damage);
+            hit_positions.push_back(m_priest_objects[i]->position() + glm::vec3(0.f, body_half_height, 0.f));
+        }
+    }
+    return hit_positions;
 }
 
 void SpawnManager::render(const engine::ref<engine::shader>& mesh_shader) const

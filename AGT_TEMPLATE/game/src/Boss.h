@@ -1,6 +1,7 @@
 #pragma once
 #include <engine.h>
 #include "Player.h" 
+#include "AttackArc.h"
 
 class Boss
 {
@@ -38,6 +39,8 @@ public:
     enum class AttackType { Melee, AOE };
     AttackType get_current_attack_type() const { return m_current_attack_type; }
     float get_aoe_radius() const { return m_aoe_radius; }
+    //Area of the current attack (cone for melee, full circle for the AOE slam) which gets locked in when the attack starts
+    const AttackArc& get_attack_arc() const { return m_attack_arc; }
 
 private:
     //AI MOVEMENT AND ATTACK FUNCTIONS
@@ -72,6 +75,11 @@ private:
     float m_attack_swing_angle = 45.0f;
     AttackType m_current_attack_type = AttackType::Melee;
     float m_aoe_radius = 6.0f;
+    float m_melee_arc_radius = 4.5f;
+    float m_melee_arc_half_angle = 70.0f;
+    float m_melee_arc_height = 1.5f; //Higher up since hes big and flying
+    float m_aoe_height = 0.3f;       //Slam shockwave is around knee height
+    AttackArc m_attack_arc;
     bool m_damage_dealt = false;
     bool m_damage_signal = false;
 

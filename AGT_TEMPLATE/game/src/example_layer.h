@@ -42,7 +42,23 @@ private:
 	int m_pause_selection = 0;
 	int m_defeat_selection = 0;
 	float m_music_volume = 0.1f;
+	bool m_run_started = false; //Main menu says CONTINUE once the game has started
+	std::string m_pause_message; //Message shown in the pause menu after buying upgrades
+
+	//Helpers for switching game states and the menus
+	void start_game();
+	void open_pause_menu();
+	void open_main_menu();
+	void adjust_setting(bool sensitivity, int direction);
+	bool try_spend_souls(int cost);
 	engine::ref<engine::material> m_dim_overlay_material{};
+
+	//COMBAT FEEDBACK
+	engine::ref<engine::material> m_hurt_overlay_material{}; //Red screen tint when the player gets hit
+	float m_hurt_flash_timer = 0.0f;
+	float m_hurt_flash_duration = 0.35f;
+	float m_last_player_health = 100.0f; //Used to check if the player lost health this frame
+	float m_hit_stop_timer = 0.0f;       //Short freeze when the players sword hits
 
 	// Structure for a collectable soul fragment
 	struct SoulFragmentPickup
@@ -51,8 +67,9 @@ private:
 		bool is_active = true;
 	};
 
-	// Helper to check for the old bounce sound effect (not used anymore since its not realistic for the theme)
-	void check_bounce();
+	//Used so the attack and dash sounds only play once per attack/dash
+	bool m_was_attacking = false;
+	bool m_was_rolling = false;
 
 	// World Objects
 	engine::ref<engine::skybox>			m_skybox{};
@@ -86,6 +103,7 @@ private:
 	//Grass
 	engine::ref<engine::model> m_grass_model{};
 	engine::ref<engine::texture_2d> m_grass_texture{};
+	engine::ref<engine::material> m_grass_material{};
 	std::vector<glm::mat4> m_grass_transforms; // Transformations for each grass patch
 
 	//Halberd Mesh for projectiles (reused to stick to the theme)
@@ -126,14 +144,12 @@ private:
 	engine::DirectionalLight            m_directionalLight;
 	engine::PointLight                  m_pointLight;
 	engine::PointLight                  m_halberdLight; // Red Light aura for the halberd statue
-	std::vector<engine::PointLight>     m_tree_lights; // Yellow lights around trees
-	uint32_t                            num_point_lights = 2;
+	uint32_t                            num_point_lights = 2; //Can't be more than MAX_POINT_LIGHTS in mesh.glsl
 
 	std::vector<engine::ref<engine::game_object>>    m_game_objects{}; //All physics objects
 	engine::ref<engine::bullet_manager> m_physics_manager{}; //Manages Bullet Physics simulation
 	engine::ref<engine::audio_manager>  m_audio_manager{};
 
-	float								m_prev_halberd_y_vel = 0.f;
 	engine::ref<engine::text_manager>	m_text_manager{};
 	Hud									m_hud;
 

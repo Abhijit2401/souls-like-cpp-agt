@@ -14,27 +14,7 @@ public:
 
     ~sandbox_app() = default;
 
-    // Event handling (passed to the example_layer)
-    void on_event(engine::event& event) override
-    {
-        application::on_event(event);
-
-        engine::event_dispatcher dispatcher(event);
-        // dispatch event on window X pressed 
-        dispatcher.dispatch<engine::key_pressed_event>(BIND_EVENT_FN(sandbox_app::on_key_pressed));
-    }
-
-    bool on_key_pressed(engine::key_pressed_event& event)
-    {
-        if (event.event_type() == engine::event_type_e::key_pressed)
-        {
-            if (event.key_code() == engine::key_codes::KEY_ESCAPE)
-            {
-                application::exit();
-            }
-        }
-        return false;
-    }
+    //Escape now opens the pause menu in example_layer instead of closing the game, quitting is done from the menus
 };
 
 

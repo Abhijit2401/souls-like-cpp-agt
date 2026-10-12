@@ -1,5 +1,6 @@
 #pragma once
 #include <engine.h>
+#include "AttackArc.h"
 
 //Frward declaration instead of include to prevent infinite loop
 class player;
@@ -40,6 +41,8 @@ public:
     float get_telegraph_progress() const { return m_telegraph_duration > 0.f ? glm::clamp(m_attack_cooldown / m_telegraph_duration, 0.f, 1.f) : 0.f; }
     float get_strike_progress() const { return m_strike_duration > 0.f ? glm::clamp((m_attack_cooldown - m_telegraph_duration) / m_strike_duration, 0.f, 1.f) : 0.f; }
     float get_attack_swing_angle() const { return m_attack_swing_angle; }
+    //Area of the current attack which gets locked in when the attack starts
+    const AttackArc& get_attack_arc() const { return m_attack_arc; }
 private:
     //AI MOVEMENT AND ATTACK
     void chase_player(float dt);
@@ -70,6 +73,10 @@ private:
     float m_strike_duration = 0.25f;
     float m_recovery_duration = 1.0f;
     float m_attack_swing_angle = 45.0f;
+    AttackArc m_attack_arc;
+    float m_attack_arc_radius = 3.0f;
+    float m_attack_arc_half_angle = 55.0f;
+    float m_attack_arc_height = 1.0f; //How high the weapon is from the feet
     bool m_damage_dealt = false;
     bool m_damage_signal = false;
     bool m_souls_dropped = false;

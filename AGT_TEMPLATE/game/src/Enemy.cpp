@@ -122,9 +122,15 @@ void Enemy::on_update(const engine::timestep& time_step)
             // Randomise pacing and swing angle per-attack so berserkers don't all attack in
             // lockstep with an identical-looking slash every time.
             float speed_variance = 0.75f + ((float)rand() / (float)RAND_MAX) * 0.6f;
-            m_telegraph_duration = 2.5f * speed_variance;
+            m_telegraph_duration = 1.4f * speed_variance;
             m_recovery_duration = 1.0f * speed_variance;
-            m_attack_swing_angle = -80.0f + ((float)rand() / (float)RAND_MAX) * 160.0f;
+            m_attack_swing_angle = -60.0f + ((float)rand() / (float)RAND_MAX) * 120.0f; //Random swing tilt from flat to diagonal
+
+            //Locks in the attack area at the start so the player can see it and move out of the way
+            glm::vec3 to_player = m_player_target->position() - m_object->position();
+            m_attack_arc = AttackArc::make(m_object->position(), to_player, m_attack_arc_radius, m_attack_arc_half_angle, m_attack_arc_height, m_attack_swing_angle);
+            m_object->set_forward(m_attack_arc.forward);
+            m_object->set_rotation_amount(m_attack_arc.yaw());
         }
         //Transitions back to idle if player gets too far away
         else if (dist > m_detection_radius * 1.5f) {
@@ -171,14 +177,8 @@ void Enemy::attack_player(float dt)
 
     if (is_striking_attack() && !m_damage_dealt)
     {
-        glm::vec3 to_player = m_player_target->position() - m_object->position();
-        float dist = glm::length(to_player);
-        if (dist > 0.01f) to_player = glm::normalize(to_player);
-
-        float dot_prod = glm::dot(m_object->forward(), to_player);
-
-        //Check distance AND if the player is in front (dot product check)
-        if (dist <= m_attack_range + 1.5f && dot_prod > 0.5f)
+        //Only hits if the player is still inside the attack area
+        if (m_attack_arc.contains(m_player_target->position(), 0.4f, 0.55f))
         {
             m_damage_dealt = true;
             m_damage_signal = true; // Signal to example_layer that damage should be applied of this is all true

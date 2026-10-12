@@ -102,6 +102,9 @@ void engine::renderer_api::bind_texture(uint32_t texture_id, uint32_t slot)
 {
     glActiveTexture(GL_TEXTURE0 + slot);
     glBindTexture(GL_TEXTURE_2D, texture_id);
+    //Switches back to texture unit 0 afterwards because textures always bind to the active unit,
+    //otherwise every texture bound after this replaces the shadow map and the models get the wrong texture
+    glActiveTexture(GL_TEXTURE0);
 }
 
 void engine::renderer_api::enable_depth_mask()

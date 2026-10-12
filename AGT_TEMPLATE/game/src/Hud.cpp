@@ -4,6 +4,15 @@
 #include <sstream>
 #include <iomanip>
 
+namespace
+{
+    const glm::vec4 k_title_colour(1.f, 0.82f, 0.3f, 1.f);
+    const glm::vec4 k_selected_colour(1.f, 1.f, 0.f, 1.f);
+    const glm::vec4 k_normal_colour(1.f, 1.f, 1.f, 1.f);
+    const glm::vec4 k_disabled_colour(0.5f, 0.5f, 0.5f, 1.f);
+    const glm::vec4 k_hint_colour(0.8f, 0.8f, 0.8f, 1.f);
+}
+
 void Hud::initialise(engine::ref<engine::text_manager> text_manager)
 {
     m_text_manager = text_manager;
@@ -19,82 +28,108 @@ void Hud::initialise(engine::ref<engine::text_manager> text_manager)
     m_bar_material = engine::material::create(1.0f, glm::vec3(1.0f), glm::vec3(1.0f), glm::vec3(1.0f), 1.0f);
 }
 
-void Hud::render_main_menu(const engine::ref<engine::shader>& text_shader,
-    const engine::ref<engine::texture_2d>& intro_texture,
+std::string Hud::format_value(float value)
+{
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(2) << value;
+    return ss.str();
+}
+
+std::string Hud::format_percent(float value)
+{
+    return std::to_string((int)std::round(value * 100.0f)) + "%";
+}
+
+void Hud::render_text_centred(const engine::ref<engine::shader>& text_shader, const std::string& text, float y, float scale, const glm::vec4& colour)
+{
+    float w = (float)engine::application::window().width();
+    m_text_manager->render_text(text_shader, text, (w - m_text_manager->text_width(text, scale)) / 2.f, y, scale, colour);
+}
+
+void Hud::render_menu_line(const engine::ref<engine::shader>& text_shader, const std::string& text, float x, float y, bool selected, bool enabled)
+{
+    std::string prefix = selected ? "> " : "  ";
+    glm::vec4 colour = enabled ? (selected ? k_selected_colour : k_normal_colour)
+                               : (selected ? glm::vec4(0.7f, 0.7f, 0.3f, 1.f) : k_disabled_colour);
+    m_text_manager->render_text(text_shader, prefix + text, x, y, 0.6f, colour);
+}
+
+void Hud::render_menu_background(const engine::ref<engine::shader>& mesh_shader,
+    const engine::ref<engine::texture_2d>& background_texture,
     const engine::ref<engine::mesh>& quad_mesh,
+    const engine::ref<engine::material>& dim_material)
+{
+    //Uses the mesh shader because the text shader can't draw images
+    auto gl_mesh_shader = std::dynamic_pointer_cast<engine::gl_shader>(mesh_shader);
+    engine::render_command::disable_depth_test();
+    gl_mesh_shader->set_uniform("lighting_on", false);
+    gl_mesh_shader->set_uniform("fog_on", false);
+    gl_mesh_shader->set_uniform("transparency", 1.0f);
+    gl_mesh_shader->set_uniform("has_texture", true);
+    background_texture->bind();
+    engine::renderer::submit(mesh_shader, quad_mesh, glm::mat4(1.0f));
+    gl_mesh_shader->set_uniform("has_texture", false);
+
+    //Darkens it so the text is easier to read
+    dim_material->submit(mesh_shader);
+    engine::renderer::submit(mesh_shader, quad_mesh, glm::mat4(1.0f));
+
+    gl_mesh_shader->set_uniform("fog_on", true);
+    gl_mesh_shader->set_uniform("lighting_on", true);
+    engine::render_command::enable_depth_test();
+}
+
+void Hud::render_main_menu(const engine::ref<engine::shader>& text_shader,
     int menu_selection,
     float mouse_sensitivity,
-    float music_volume)
+    float music_volume,
+    bool run_in_progress)
 {
-    std::dynamic_pointer_cast<engine::gl_shader>(text_shader)->set_uniform("has_texture", true);
-    intro_texture->bind();
-    glm::mat4 transform(1.0f);
-    engine::renderer::submit(text_shader, quad_mesh, transform);
-    std::dynamic_pointer_cast<engine::gl_shader>(text_shader)->set_uniform("has_texture", false);
+    float w = (float)engine::application::window().width();
+    float h = (float)engine::application::window().height();
 
-    float width = (float)engine::application::window().width();
-    float height = (float)engine::application::window().height();
+    render_text_centred(text_shader, "MEDIEVAL SOULS", h / 2.f + 150.f, 1.4f, k_title_colour);
 
-    m_text_manager->render_text(text_shader, "medievalsoulsgameforadvancedgamesproject", 100.f, height / 2.f + 100.f, 1.0f, glm::vec4(1.f, 1.f, 0.f, 1.f));
+    //Menu options in a column in the middle of the screen
+    float x = w / 2.f - 160.f;
+    float y = h / 2.f + 20.f;
+    const float spacing = 45.f;
+    render_menu_line(text_shader, run_in_progress ? "CONTINUE" : "START", x, y, menu_selection == MainStart);
+    render_menu_line(text_shader, "SENSITIVITY   < " + format_value(mouse_sensitivity) + " >", x, y - spacing, menu_selection == MainSensitivity);
+    render_menu_line(text_shader, "MUSIC VOLUME  < " + format_percent(music_volume) + " >", x, y - spacing * 2.f, menu_selection == MainVolume);
+    render_menu_line(text_shader, "QUIT", x, y - spacing * 3.f, menu_selection == MainQuit);
 
-    // Main menu selection text setup
-    if (menu_selection == 0)
-    {
-        m_text_manager->render_text(text_shader, "> START", 100.f, height / 2.f, 0.7f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-        m_text_manager->render_text(text_shader, "  SENSITIVITY", 100.f, height / 2.f - 50.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-        m_text_manager->render_text(text_shader, "  VOLUME", 100.f, height / 2.f - 100.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-    }
-    else if (menu_selection == 1)
-    {
-        m_text_manager->render_text(text_shader, "  START", 100.f, height / 2.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-        m_text_manager->render_text(text_shader, "> SENSITIVITY", 100.f, height / 2.f - 50.f, 0.7f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-        m_text_manager->render_text(text_shader, "  VOLUME", 100.f, height / 2.f - 100.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-    }
-    else
-    {
-        m_text_manager->render_text(text_shader, "  START", 100.f, height / 2.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-        m_text_manager->render_text(text_shader, "  SENSITIVITY", 100.f, height / 2.f - 50.f, 0.7f, glm::vec4(1.f, 1.f, 1.f, 1.f));
-        m_text_manager->render_text(text_shader, "> VOLUME", 100.f, height / 2.f - 100.f, 0.7f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-    }
+    render_text_centred(text_shader, "W/S: Navigate  |  A/D: Adjust  |  Space/Enter: Select", 90.f, 0.45f, k_hint_colour);
 
-    // Mouse sensitivity value
-    std::stringstream sensitivity_calc;
-    sensitivity_calc << std::fixed << std::setprecision(2) << mouse_sensitivity;
-    std::string sens_text = "< " + sensitivity_calc.str() + " >";
-    m_text_manager->render_text(text_shader, sens_text, 350.f, height / 2.f - 50.f, 0.7f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-
-    // Music volume value
-    std::stringstream vol_calc;
-    vol_calc << std::fixed << std::setprecision(2) << music_volume;
-    std::string vol_text = "< " + vol_calc.str() + " >";
-    m_text_manager->render_text(text_shader, vol_text, 350.f, height / 2.f - 100.f, 0.7f, glm::vec4(1.f, 1.f, 0.f, 1.f));
-
-    // Controls list
-    m_text_manager->render_text(text_shader, "Controls:", 10.f, height - 25.f, 0.5f, glm::vec4(1.f));
-    m_text_manager->render_text(text_shader, "WASD: Move | L-Shift: Dash | R: Health Potion", 10.f, height - 50.f, 0.5f, glm::vec4(1.f));
-    m_text_manager->render_text(text_shader, "Mouse: Move Camera | Middle Click: Lock On", 10.f, height - 75.f, 0.5f, glm::vec4(1.f));
-    m_text_manager->render_text(text_shader, "Left Click: Attack | E: Toggle Upgrade Menu", 10.f, height - 100.f, 0.5f, glm::vec4(1.f));
-    m_text_manager->render_text(text_shader, "P: Spawn Enemy", 10.f, height - 125.f, 0.5f, glm::vec4(1.f));
+    //Controls list
+    m_text_manager->render_text(text_shader, "Controls:", 10.f, h - 25.f, 0.5f, k_title_colour);
+    m_text_manager->render_text(text_shader, "WASD: Move | L-Shift: Roll | R: Health Potion", 10.f, h - 50.f, 0.5f, k_normal_colour);
+    m_text_manager->render_text(text_shader, "Mouse: Move Camera | Middle Click: Lock On", 10.f, h - 75.f, 0.5f, k_normal_colour);
+    m_text_manager->render_text(text_shader, "Left Click: Attack | Esc/E: Pause & Upgrades", 10.f, h - 100.f, 0.5f, k_normal_colour);
+    m_text_manager->render_text(text_shader, "P: Spawn Enemy | F1: Wireframe | F2: Invincible", 10.f, h - 125.f, 0.5f, k_normal_colour);
 }
 
 void Hud::render_game_hud(const engine::ref<engine::shader>& text_shader, const player& player, int soul_count)
 {
     std::stringstream hp_ss;
-    hp_ss << (int)player.get_health() << "/" << (int)player.get_max_health();
+    hp_ss << (int)std::ceil(player.get_health()) << "/" << (int)player.get_max_health();
     m_text_manager->render_text(text_shader, hp_ss.str(), 200.f, 120.f, 0.4f, glm::vec4(1.f, 0.4f, 0.4f, 1.f));
 
     std::stringstream stm_ss;
     stm_ss << (int)player.get_stamina() << "/" << (int)player.get_max_stamina();
     m_text_manager->render_text(text_shader, stm_ss.str(), 200.f, 98.f, 0.4f, glm::vec4(0.4f, 1.f, 0.4f, 1.f));
 
-    // Souls white text
+    //Souls white text
     std::string soul_text = "Soul Fragments: " + std::to_string(soul_count);
-    m_text_manager->render_text(text_shader, soul_text, 10.f, 75.f, 0.5f, glm::vec4(1.f, 1.f, 1.f, 1.f));
+    m_text_manager->render_text(text_shader, soul_text, 10.f, 70.f, 0.5f, k_normal_colour);
 
-    // Potions blue text
+    //Potions blue text
     std::stringstream pot_ss;
-    pot_ss << "Potions: " << player.get_potions();
-    m_text_manager->render_text(text_shader, pot_ss.str(), 10.f, 50.f, 0.5f, glm::vec4(0.f, 1.f, 1.f, 1.f));
+    pot_ss << "Potions: " << player.get_potions() << "  (R to drink)";
+    m_text_manager->render_text(text_shader, pot_ss.str(), 10.f, 45.f, 0.5f, glm::vec4(0.f, 1.f, 1.f, 1.f));
+
+    if (player.is_invincible())
+        m_text_manager->render_text(text_shader, "INVINCIBLE (F2)", 10.f, 20.f, 0.4f, k_selected_colour);
 }
 
 void Hud::render_bar(const engine::ref<engine::shader>& mesh_shader,
@@ -165,9 +200,8 @@ void Hud::render_boss_bar_graphic(const engine::ref<engine::shader>& mesh_shader
 
 void Hud::render_boss_name_text(const engine::ref<engine::shader>& text_shader)
 {
-    float screen_w = (float)engine::application::window().width();
     float screen_h = (float)engine::application::window().height();
-    m_text_manager->render_text(text_shader, "BOSS: DEVIL", screen_w / 2 - 100, screen_h - 40, 0.5f, glm::vec4(1.f, 0.5f, 0.f, 1.f));
+    render_text_centred(text_shader, "BOSS: DEVIL", screen_h - 40.f, 0.5f, glm::vec4(1.f, 0.5f, 0.f, 1.f));
 }
 
 void Hud::render_dim_overlay(const engine::ref<engine::shader>& mesh_shader,
@@ -185,49 +219,41 @@ void Hud::render_dim_overlay(const engine::ref<engine::shader>& mesh_shader,
     engine::render_command::enable_depth_test();
 }
 
-void Hud::render_menu_line(const engine::ref<engine::shader>& text_shader, const std::string& text, float x, float y, bool selected)
-{
-    std::string prefix = selected ? "> " : "  ";
-    glm::vec4 colour = selected ? glm::vec4(1.f, 1.f, 0.f, 1.f) : glm::vec4(1.f);
-    m_text_manager->render_text(text_shader, prefix + text, x, y, 0.6f, colour);
-}
-
-void Hud::render_pause_menu(const engine::ref<engine::shader>& text_shader, const player& player, int soul_count, int pause_selection, float music_volume)
+void Hud::render_pause_menu(const engine::ref<engine::shader>& text_shader, const player& player, int soul_count, int pause_selection, float music_volume, const std::string& status_message)
 {
     float w = (float)engine::application::window().width();
     float h = (float)engine::application::window().height();
 
-    m_text_manager->render_text(text_shader, "Paused", w / 2 - 70, h / 2 + 160, 1.0f, glm::vec4(1.f, 1.f, 0.f, 1.f));
+    render_text_centred(text_shader, "PAUSED", h / 2.f + 200.f, 1.0f, k_title_colour);
+    render_text_centred(text_shader, "Available Souls: " + std::to_string(soul_count), h / 2.f + 155.f, 0.6f, glm::vec4(0.f, 0.7f, 1.f, 1.f));
 
-    std::stringstream souls;
-    souls << "Available Souls: " << soul_count;
-    m_text_manager->render_text(text_shader, souls.str(), w / 2 - 220, h / 2 + 115, 0.6f, glm::vec4(1.f));
+    float x = w / 2.f - 260.f;
+    float y = h / 2.f + 105.f;
+    const float spacing = 35.f;
+
+    render_menu_line(text_shader, "Resume", x, y, pause_selection == PauseResume);
 
     std::stringstream dmg;
-    dmg << "Increase Damage (Cost: 5) Current: " << (int)player.get_damage();
-    render_menu_line(text_shader, dmg.str(), w / 2 - 220, h / 2 + 70, pause_selection == 0);
+    dmg << "Increase Damage (" << k_damage_upgrade_cost << " souls)  Current: " << (int)player.get_damage();
+    render_menu_line(text_shader, dmg.str(), x, y - spacing, pause_selection == PauseDamage, soul_count >= k_damage_upgrade_cost);
 
     std::stringstream spd;
-    spd << "Increase Attack Speed (Cost: 5) Current: " << (int)player.get_speed();
-    render_menu_line(text_shader, spd.str(), w / 2 - 220, h / 2 + 35, pause_selection == 1);
+    spd << "Increase Move Speed (" << k_speed_upgrade_cost << " souls)  Current: " << (int)player.get_speed();
+    render_menu_line(text_shader, spd.str(), x, y - spacing * 2.f, pause_selection == PauseSpeed, soul_count >= k_speed_upgrade_cost);
 
     std::stringstream pot;
-    pot << "Buy Health Potion (Cost: 10) Owned: " << player.get_potions();
-    render_menu_line(text_shader, pot.str(), w / 2 - 220, h / 2, pause_selection == 2);
+    pot << "Buy Health Potion (" << k_potion_cost << " souls)  Owned: " << player.get_potions();
+    render_menu_line(text_shader, pot.str(), x, y - spacing * 3.f, pause_selection == PausePotion, soul_count >= k_potion_cost);
 
-    std::stringstream sens;
-    sens << std::fixed << std::setprecision(2) << "Sensitivity < " << player.get_mouse_sensitivity() << " >";
-    render_menu_line(text_shader, sens.str(), w / 2 - 220, h / 2 - 35, pause_selection == 3);
+    render_menu_line(text_shader, "Sensitivity   < " + format_value(player.get_mouse_sensitivity()) + " >", x, y - spacing * 4.f, pause_selection == PauseSensitivity);
+    render_menu_line(text_shader, "Music Volume  < " + format_percent(music_volume) + " >", x, y - spacing * 5.f, pause_selection == PauseVolume);
+    render_menu_line(text_shader, "Return to Main Menu", x, y - spacing * 6.f, pause_selection == PauseMainMenu);
+    render_menu_line(text_shader, "Quit Game", x, y - spacing * 7.f, pause_selection == PauseQuit);
 
-    std::stringstream vol;
-    vol << std::fixed << std::setprecision(2) << "Volume < " << music_volume << " >";
-    render_menu_line(text_shader, vol.str(), w / 2 - 220, h / 2 - 70, pause_selection == 4);
+    if (!status_message.empty())
+        render_text_centred(text_shader, status_message, y - spacing * 8.f - 10.f, 0.5f, k_selected_colour);
 
-    render_menu_line(text_shader, "Return to Main Menu", w / 2 - 220, h / 2 - 105, pause_selection == 5);
-    render_menu_line(text_shader, "Quit Game", w / 2 - 220, h / 2 - 140, pause_selection == 6);
-
-    m_text_manager->render_text(text_shader, "Controls:", w / 2 - 220, h / 2 - 190, 0.5f, glm::vec4(0.8f));
-    m_text_manager->render_text(text_shader, "W/S: Navigate | Space: Select | A/D: Adjust | E: Resume", w / 2 - 220, h / 2 - 215, 0.5f, glm::vec4(0.8f));
+    render_text_centred(text_shader, "W/S: Navigate  |  Space/Enter: Select  |  A/D: Adjust  |  Esc/E: Resume", y - spacing * 9.f - 15.f, 0.45f, k_hint_colour);
 }
 
 void Hud::render_defeat_screen(const engine::ref<engine::shader>& text_shader, int defeat_selection)
@@ -235,11 +261,12 @@ void Hud::render_defeat_screen(const engine::ref<engine::shader>& text_shader, i
     float w = (float)engine::application::window().width();
     float h = (float)engine::application::window().height();
 
-    m_text_manager->render_text(text_shader, "YOU DIED", w / 2 - 135, h / 2 + 90, 1.5f, glm::vec4(0.75f, 0.05f, 0.05f, 1.f));
+    render_text_centred(text_shader, "YOU DIED", h / 2.f + 90.f, 1.5f, glm::vec4(0.75f, 0.05f, 0.05f, 1.f));
 
-    render_menu_line(text_shader, "Respawn", w / 2 - 90, h / 2, defeat_selection == 0);
-    render_menu_line(text_shader, "Return to Main Menu", w / 2 - 90, h / 2 - 35, defeat_selection == 1);
-    render_menu_line(text_shader, "Quit Game", w / 2 - 90, h / 2 - 70, defeat_selection == 2);
+    float x = w / 2.f - 120.f;
+    render_menu_line(text_shader, "Respawn", x, h / 2.f, defeat_selection == DefeatRespawn);
+    render_menu_line(text_shader, "Return to Main Menu", x, h / 2.f - 35.f, defeat_selection == DefeatMainMenu);
+    render_menu_line(text_shader, "Quit Game", x, h / 2.f - 70.f, defeat_selection == DefeatQuit);
 
-    m_text_manager->render_text(text_shader, "W/S: Navigate | Space: Select", w / 2 - 150, h / 2 - 120, 0.5f, glm::vec4(0.8f));
+    render_text_centred(text_shader, "W/S: Navigate  |  Space/Enter: Select", h / 2.f - 120.f, 0.45f, k_hint_colour);
 }

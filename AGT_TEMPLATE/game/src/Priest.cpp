@@ -4,6 +4,14 @@
 Priest::Priest() {}
 Priest::~Priest() {}
 
+//Flattens the direction onto the ground before normalising so it doesn't break when the vector is zero
+static glm::vec3 flat_direction(glm::vec3 v)
+{
+    v.y = 0.0f;
+    float len = glm::length(v);
+    return (len > 0.01f) ? v / len : glm::vec3(0.f);
+}
+
 void Priest::initialise(engine::ref<engine::game_object> object,
     glm::vec3 position,
     engine::ref<engine::game_object> player_target)
@@ -100,8 +108,7 @@ void Priest::on_update(const engine::timestep& time_step)
         }
         else {
             face_player((float)time_step);
-            glm::vec3 dir = glm::normalize(m_player_target->position() - m_object->position());
-            dir.y = 0.0f;
+            glm::vec3 dir = flat_direction(m_player_target->position() - m_object->position());
             float current_y = m_object->velocity().y;
             m_object->set_velocity(glm::vec3(dir.x * m_speed, current_y, dir.z * m_speed));
         }
@@ -115,8 +122,7 @@ void Priest::on_update(const engine::timestep& time_step)
         // Move away from the player
         else {
             face_player((float)time_step);
-            glm::vec3 dir = glm::normalize(m_object->position() - m_player_target->position());
-            dir.y = 0.0f;
+            glm::vec3 dir = flat_direction(m_object->position() - m_player_target->position());
             float current_y = m_object->velocity().y;
             m_object->set_velocity(glm::vec3(dir.x * m_flee_speed, current_y, dir.z * m_flee_speed));
         }

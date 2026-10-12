@@ -21,6 +21,8 @@ namespace engine
 			~text_manager();
 			
 			void render_text(engine::ref<engine::shader>, std::string text, float x, float y, float scale, glm::vec4 color);
+			//Gets how wide the text will be in pixels so menu text can be centred
+			float text_width(const std::string& text, float scale) const;
 			static ref<text_manager> create();
 
 		private:

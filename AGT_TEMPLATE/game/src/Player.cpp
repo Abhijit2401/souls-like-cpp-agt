@@ -3,6 +3,7 @@
 #include "engine/core/input.h"
 #include "engine/key_codes.h"
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/constants.hpp>
 #include <cstdlib>
 
 player::player()
@@ -42,11 +43,11 @@ void player::initialise(engine::ref<engine::game_object> object)
     m_object->set_forward(glm::vec3(0.f, 0.f, -1.f));
     m_object->set_position(glm::vec3(0.f, 0.09f, 10.f)); // Starting spawn position
 
-    //PLAYER ANIMATION INDEX
+    //PLAYER ANIMATION INDEX (knight.fbx clips: 0 Attack, 1 Damaged, 2 Die, 3 Idle, 4 Walk)
     m_anim_attack = 0;
     m_anim_idle = 3;
     m_anim_walk = 4;
-    m_anim_dash = 2;
+    m_anim_death = 2;
 
     m_object->animated_mesh()->set_default_animation(m_anim_idle);
     m_object->animated_mesh()->switch_animation(m_anim_idle);
@@ -70,17 +71,41 @@ float player::get_attack_progress() const {
     if (m_current_state != PlayerState::Attacking || m_attack_duration <= 0.f) return 0.f;
     return glm::clamp(1.0f - (m_animation_timer / m_attack_duration), 0.f, 1.f);
 }
+
+float player::get_attack_windup_progress() const {
+    if (m_attack_hit_fraction <= 0.f) return 1.f;
+    return glm::clamp(get_attack_progress() / m_attack_hit_fraction, 0.f, 1.f);
+}
+
+AttackArc player::get_attack_arc() const {
+    if (!m_object) return AttackArc();
+    return AttackArc::make(m_object->position(), m_object->forward(), m_attack_arc_radius, m_attack_arc_half_angle, m_attack_arc_height, m_attack_arc_roll);
+}
+
+bool player::consume_attack_hit() {
+    if (!m_attack_hit_pending) return false;
+    m_attack_hit_pending = false;
+    return true;
+}
 void player::take_damage(float amount)
 {
     if (m_invincible) return;
-    if (m_current_state == PlayerState::Rolling) return;
+    if (m_current_state == PlayerState::Rolling || m_current_state == PlayerState::Dead) return;
 
     m_health -= amount;
     trigger_camera_shake(0.3f, 0.18f);
     if (m_health <= 0.0f) {
         m_health = 0.0f;
         m_current_state = PlayerState::Dead;
-        m_object->animated_mesh()->switch_animation(m_anim_dash);
+        m_speed = 0.0f;
+        m_object->set_velocity(glm::vec3(0.f, m_object->velocity().y, 0.f)); //Stops movement otherwise the player slides forever since there's no friction
+        m_object->animated_mesh()->switch_root_movement(false);
+        m_object->animated_mesh()->switch_animation(m_anim_death);
+
+        m_death_timer = 0.0f;
+        m_death_duration = 2.0f;
+        if (m_object->animated_mesh()->animations().size() > m_anim_death)
+            m_death_duration = (float)m_object->animated_mesh()->animations().at(m_anim_death)->mDuration / 30.0f;
     }
 }
 
@@ -104,6 +129,10 @@ void player::respawn()
     m_health = m_max_health;
     m_stamina = m_max_stamina;
     m_speed = 0.0f;
+    m_death_timer = 0.0f;
+    m_shake_time_left = 0.0f;
+    m_attack_hit_fired = false;
+    m_attack_hit_pending = false;
     m_current_state = PlayerState::Idle;
     if (m_object)
     {
@@ -130,7 +159,21 @@ bool player::use_potion()
 
 void player::on_update(const engine::timestep& time_step, bool has_lock_on_target, const glm::vec3& lock_on_target_position)
 {
-    if (m_current_state == PlayerState::Dead) return;
+    //DEAD STATE (plays the death animation once then stays on the last frame)
+    if (m_current_state == PlayerState::Dead)
+    {
+        m_object->set_velocity(glm::vec3(0.f, m_object->velocity().y, 0.f));
+        m_object->set_offset(glm::vec3(0.f, -9.0f, 0.f));
+        float previous_time = m_death_timer;
+        m_death_timer += (float)time_step;
+        if (previous_time < m_death_duration)
+        {
+            //Stops right before the end so the animation doesn't loop back to the start
+            float step = glm::min((float)time_step, m_death_duration - previous_time - 0.001f);
+            if (step > 0.0f) m_object->animated_mesh()->on_update(step);
+        }
+        return;
+    }
 
     if (m_current_state != PlayerState::Rolling && m_current_state != PlayerState::Attacking)
     {
@@ -186,11 +229,18 @@ void player::on_update(const engine::timestep& time_step, bool has_lock_on_targe
         m_animation_timer -= (float)time_step;
         m_object->animated_mesh()->on_update(time_step);
         m_object->set_offset(glm::vec3(0.f, -9.0f, 0.f)); // Keep visual offset
+        m_object->set_velocity(glm::vec3(0.f, m_object->velocity().y, 0.f)); //Stands still while attacking
+
+        //The sword hits once partway through the swing
+        if (!m_attack_hit_fired && get_attack_progress() >= m_attack_hit_fraction)
+        {
+            m_attack_hit_fired = true;
+            m_attack_hit_pending = true;
+        }
 
         if (m_animation_timer < 0.0f)
         {
             // Exit attack state
-            m_object->animated_mesh()->switch_root_movement(false);
             m_object->animated_mesh()->switch_animation(m_anim_idle);
             m_current_state = PlayerState::Idle;
         }
@@ -209,13 +259,13 @@ void player::on_update(const engine::timestep& time_step, bool has_lock_on_targe
         m_object->set_rotation_amount(m_dash_angle);
 
         m_object->set_offset(glm::vec3(0.f, -9.0f, 0.f));
-        m_object->animated_mesh()->on_update(time_step * 3.0f); //Speed up its animation
+        m_object->animated_mesh()->on_update(time_step * 1.5f); //Keeps the legs moving while the body flips
 
         if (m_animation_timer < 0.0f)
         {
-            //Exit rolling state
-            m_object->set_velocity(glm::vec3(0.f, m_object->velocity().y, 0.f)); //Stop horizontal movement
-            m_object->animated_mesh()->switch_root_movement(false);
+            //Exit rolling state, keeps a bit of speed so it doesn't just stop dead
+            m_last_movement_direction = m_locked_roll_direction;
+            m_speed = m_run_speed * 0.5f;
             m_object->animated_mesh()->switch_animation(m_anim_idle);
             m_current_state = PlayerState::Idle;
         }
@@ -345,9 +395,12 @@ void player::attack() {
     if (m_stamina < 15.0f) return; //Checks stamina cost
     m_stamina -= 15.0f;
 
-    m_object->animated_mesh()->switch_root_movement(true); // Allow animation to move root bone
+    //Root movement off so the model doesn't drift away from the physics body during the attack
+    m_object->animated_mesh()->switch_root_movement(false);
     m_object->animated_mesh()->switch_animation(m_anim_attack);
     m_current_state = PlayerState::Attacking;
+    m_attack_hit_fired = false;
+    m_attack_hit_pending = false;
     m_speed = 0.0f; //Stops horizontal movement
     m_object->set_velocity(glm::vec3(0.f, m_object->velocity().y, 0.f));
     trigger_camera_shake(0.15f, 0.05f);
@@ -365,22 +418,52 @@ void player::roll(const glm::vec3& direction) {
     if (m_stamina < 20.0f) return; //Checks stamina cost
     m_stamina -= 20.0f;
 
-    m_object->animated_mesh()->switch_root_movement(true);
-    m_object->animated_mesh()->switch_animation(m_anim_dash);
+    //Root movement off since the physics moves the player and the flip is only done when rendering,
+    //so the model doesn't drift away from the physics body
+    m_object->animated_mesh()->switch_root_movement(false);
+    m_object->animated_mesh()->switch_animation(m_anim_walk);
 
     m_current_state = PlayerState::Rolling;
-    m_locked_roll_direction = direction;
+    m_locked_roll_direction = glm::vec3(direction.x, 0.f, direction.z);
 
     // Defaults roll direction if standing still
     if (glm::length(m_locked_roll_direction) < 0.01f)
         m_locked_roll_direction = glm::vec3(0, 0, -1);
+    m_locked_roll_direction = glm::normalize(m_locked_roll_direction);
+    m_object->set_forward(m_locked_roll_direction);
 
     m_speed = 0.0f;
 
     m_dash_angle = atan2(m_locked_roll_direction.x, m_locked_roll_direction.z);
 
-    glm::vec3 v = m_object->velocity();
-    m_object->set_velocity(glm::vec3(v.x, 2.0f, v.z)); //Adds small vertical jump to roll to give it some distinction
+    m_animation_timer = m_roll_duration; //Invulnerability period
+}
 
-    m_animation_timer = 0.5f; //Invulnerability period
+glm::mat4 player::render_transform() const
+{
+    glm::mat4 transform(1.0f);
+    if (!m_object) return transform;
+
+    //Same as the normal game_object transform but with an extra forward flip for the roll
+    //(the engine transform can only rotate on one axis so it can't do the flip itself)
+    const bool rolling = m_current_state == PlayerState::Rolling && m_roll_duration > 0.f;
+    const float t = rolling ? glm::clamp(1.0f - m_animation_timer / m_roll_duration, 0.0f, 1.0f) : 0.0f;
+    const float hop = rolling ? sin(t * glm::pi<float>()) * m_roll_hop_height : 0.0f;
+
+    transform = glm::translate(transform, m_object->position() + glm::vec3(0.f, m_roll_pivot_height + hop, 0.f));
+    transform = glm::rotate(transform, m_object->rotation_amount(), m_object->rotation_axis());
+
+    if (rolling)
+    {
+        float eased = t * t * (3.0f - 2.0f * t); //Smoothstep so it starts slow, flips fast then lands slow
+        //Model faces +Z so rotating around +X tips the head forward
+        transform = glm::rotate(transform, eased * glm::two_pi<float>(), glm::vec3(1.f, 0.f, 0.f));
+        //Squashes the model a bit in the middle of the roll so it looks tucked in
+        float tuck = sin(t * glm::pi<float>());
+        transform = glm::scale(transform, glm::vec3(1.0f - 0.1f * tuck, 1.0f - 0.35f * tuck, 1.0f - 0.1f * tuck));
+    }
+
+    transform = glm::translate(transform, -m_object->offset() * m_object->scale() - glm::vec3(0.f, m_roll_pivot_height, 0.f));
+    transform = glm::scale(transform, m_object->scale());
+    return transform;
 }

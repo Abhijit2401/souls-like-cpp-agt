@@ -1,6 +1,7 @@
 #pragma once
 #include <engine.h>
 #include "glm/gtx/rotate_vector.hpp"
+#include "AttackArc.h"
 
 class player
 {
@@ -27,8 +28,19 @@ public:
     float get_max_health() const { return m_max_health; }
     bool is_attacking() const;
     float get_attack_progress() const;
+    //Area the current swing covers based on where the player is and is facing
+    AttackArc get_attack_arc() const;
+    //Goes from 0 to 1 from the start of the swing until the sword hits (used for the indicator)
+    float get_attack_windup_progress() const;
+    bool has_attack_connected() const { return m_attack_hit_fired; }
+    //Returns true once per swing on the frame the sword hits so damage only gets applied once
+    bool consume_attack_hit();
     bool is_rolling() const { return m_current_state == PlayerState::Rolling; }
     bool is_dead() const { return m_current_state == PlayerState::Dead; }
+    //True once the death animation is finished so the defeat screen can show
+    bool is_death_sequence_finished() const { return is_dead() && m_death_timer >= m_death_duration + m_death_linger; }
+    //Transform used for rendering the player which includes the roll flip
+    glm::mat4 render_transform() const;
     void respawn();
     void toggle_invincible() { m_invincible = !m_invincible; }
     bool is_invincible() const { return m_invincible; }
@@ -51,14 +63,20 @@ public:
     void increase_max_stamina(float amount) { m_max_stamina += amount; }
 
     //Camera/Control settings
-    void set_mouse_sensitivity(float sensitivity) { s_mouse_sensitivity = sensitivity; }
+    void set_mouse_sensitivity(float sensitivity) { s_mouse_sensitivity = glm::clamp(sensitivity, 0.05f, 2.0f); }
     float get_mouse_sensitivity() const { return s_mouse_sensitivity; }
-    int get_debug_anim_index() const { return m_anim_dash; }
     void trigger_camera_shake(float duration, float magnitude);
 private:
     float m_speed{ 0.f };
     float m_animation_timer; // Used to track attack/roll duration
     float m_attack_duration = 1.0f;
+    float m_attack_hit_fraction = 0.4f; //How far into the attack animation the sword hits
+    bool m_attack_hit_fired = false;
+    bool m_attack_hit_pending = false;
+    float m_attack_arc_radius = 2.8f;
+    float m_attack_arc_half_angle = 70.0f;
+    float m_attack_arc_height = 0.8f; //How high the sword is from the feet
+    float m_attack_arc_roll = 15.0f;  //Slightly diagonal to match the knights swing
     engine::ref<engine::game_object> m_object;
 
     //CAMERA SETTINGS
@@ -80,12 +98,20 @@ private:
     uint32_t m_anim_idle;
     uint32_t m_anim_walk;
     uint32_t m_anim_attack;
-    uint32_t m_anim_dash;
+    uint32_t m_anim_death;
 
     glm::vec3 m_last_movement_direction{ 0.f, 0.f, -1.f };
-    //Roll/Dash stats
+    //Roll stats (the knight model has no roll animation so the flip is done in code in render_transform)
     glm::vec3 m_locked_roll_direction{ 0.f };
     float m_dash_angle = 0.0f;
+    float m_roll_duration = 0.55f; //Also how long the invincibility lasts
+    float m_roll_pivot_height = 0.55f; //Point the flip rotates around, about the middle of the body (the physics position is at the feet)
+    float m_roll_hop_height = 0.2f;    //Small hop in the middle of the roll so it doesn't go into the ground
+
+    //Death sequence
+    float m_death_timer = 0.0f;
+    float m_death_duration = 2.0f; //Gets set to the death animation length when the player dies
+    float m_death_linger = 0.75f;  //Extra wait on the last frame before the defeat screen shows
     bool m_shift_pressed = false; //Tracks shift state to only trigger roll on press
 
     //CAMERA SHAKE

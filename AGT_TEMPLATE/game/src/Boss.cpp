@@ -115,8 +115,17 @@ void Boss::on_update(const engine::timestep& time_step)
                 m_telegraph_duration = 1.3f * speed_variance;
                 m_strike_duration = 0.3f;
                 m_recovery_duration = 1.4f * speed_variance;
-                m_attack_swing_angle = -80.0f + ((float)rand() / (float)RAND_MAX) * 160.0f;
+                m_attack_swing_angle = -60.0f + ((float)rand() / (float)RAND_MAX) * 120.0f; //Random swing tilt
             }
+
+            //Locks in the attack area at the start so the indicator shows exactly where it will hit and the player can dodge it
+            glm::vec3 to_player = m_player_target->position() - m_object->position();
+            if (m_current_attack_type == AttackType::AOE)
+                m_attack_arc = AttackArc::make(m_object->position(), to_player, m_aoe_radius, 360.0f, m_aoe_height, 0.0f); //Slam shockwave is low to the ground
+            else
+                m_attack_arc = AttackArc::make(m_object->position(), to_player, m_melee_arc_radius, m_melee_arc_half_angle, m_melee_arc_height, m_attack_swing_angle);
+            m_object->set_forward(m_attack_arc.forward);
+            m_object->set_rotation_amount(m_attack_arc.yaw());
         }
         else {
             chase_player((float)time_step); //continues chasing
@@ -169,13 +178,7 @@ void Boss::attack_player(float dt)
     m_attack_cooldown += dt;
     if (is_striking_attack() && !m_damage_dealt)
     {
-        glm::vec3 to_player = m_player_target->position() - m_object->position();
-        float dist_to_player = glm::length(to_player);
-        bool in_range = (m_current_attack_type == AttackType::AOE)
-            ? dist_to_player <= m_aoe_radius
-            : dist_to_player <= m_attack_range + 1.0f;
-
-        if (in_range)
+        if (m_attack_arc.contains(m_player_target->position(), 0.4f, 0.55f))
         {
             m_damage_dealt = true;
             m_damage_signal = true;

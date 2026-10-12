@@ -2,6 +2,7 @@
 #include <engine.h>
 #include "Enemy.h"
 #include "Priest.h"
+#include "AttackArc.h"
 
 class player;
 
@@ -25,6 +26,10 @@ public:
     void spawn_priest(const player& player, std::vector<engine::ref<engine::game_object>>& game_objects);
 
     UpdateEvents update(const engine::timestep& time_step, player& player_ref);
+
+    //Applies one sword swing to every enemy and priest inside the attack area
+    //and returns where each one got hit so the sparks can spawn there
+    std::vector<glm::vec3> apply_player_hit(const AttackArc& arc, float damage);
 
     void render(const engine::ref<engine::shader>& mesh_shader) const;
 
